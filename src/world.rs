@@ -7,8 +7,8 @@ const PARTICLE_KINDS: usize = 8;
 const PARTICLE_COUNT_MIN: usize = 1400;
 const PARTICLE_COUNT_MAX: usize = 3000;
 
-const WALL_MARGIN: f32 = 5.0;
-const WALL_PUSH: f32 = 0.075;
+const WALL_MARGIN: f32 = 10.0;
+const WALL_PUSH: f32 = 0.115;
 const WALL_BOUNCE: f32 = 0.86;
 const PHI: f32 = 1.618_034;
 const BUCKET_SIZE: f32 = 8.0;
