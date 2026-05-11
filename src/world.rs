@@ -483,6 +483,43 @@ impl World {
                 ay += rand_push(current.y, current.x, self.seed ^ 0xA53A, self.tick) * 0.018;
             }
 
+            // Pressure-orbit well: dense local cores become mild gravity wells with orbital swirl.
+            if pressure >= 14 {
+                let core = ((pressure as f32 - 13.0) / 32.0).min(1.0);
+
+                let left = if cx > 0 {
+                    self.runtime.pressure_map[cy * self.width + (cx - 1)] as f32
+                } else {
+                    pressure as f32
+                };
+
+                let right = if cx + 1 < self.width {
+                    self.runtime.pressure_map[cy * self.width + (cx + 1)] as f32
+                } else {
+                    pressure as f32
+                };
+
+                let up = if cy > 0 {
+                    self.runtime.pressure_map[(cy - 1) * self.width + cx] as f32
+                } else {
+                    pressure as f32
+                };
+
+                let down = if cy + 1 < self.height {
+                    self.runtime.pressure_map[(cy + 1) * self.width + cx] as f32
+                } else {
+                    pressure as f32
+                };
+
+                let gx = (right - left).clamp(-24.0, 24.0);
+                let gy = (down - up).clamp(-24.0, 24.0);
+                let glen = (gx * gx + gy * gy).sqrt().max(0.001);
+
+                ax += gx / glen * core * 0.004;
+                ay += gy / glen * core * 0.004;
+                ax += -gy / glen * core * 0.007;
+                ay += gx / glen * core * 0.007;
+            }
             let drag = if drag_count > 0.0 {
                 drag_accum / drag_count
             } else {
