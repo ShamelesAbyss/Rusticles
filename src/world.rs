@@ -6,9 +6,9 @@ const PARTICLE_KINDS: usize = 8;
 const PARTICLE_COUNT_MIN: usize = 500;
 const PARTICLE_COUNT_MAX: usize = 1500;
 
-const WALL_MARGIN: f32 = 4.0;
-const WALL_PUSH: f32 = 0.055;
-const WALL_BOUNCE: f32 = 0.82;
+const WALL_MARGIN: f32 = 5.0;
+const WALL_PUSH: f32 = 0.075;
+const WALL_BOUNCE: f32 = 0.86;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Cell {
@@ -33,6 +33,9 @@ pub struct Rule {
     pub attraction: f32,
     pub radius: f32,
     pub repel_radius: f32,
+    pub orbit: f32,
+    pub density: f32,
+    pub drag: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -60,7 +63,7 @@ impl World {
         let mut cells = vec![Cell::Dead; width * height];
 
         for cell in cells.iter_mut() {
-            if rng.gen::<f32>() < 0.015 {
+            if rng.gen::<f32>() < 0.012 {
                 *cell = Cell::Alive;
             }
         }
@@ -68,7 +71,7 @@ impl World {
         let total = rng.gen_range(PARTICLE_COUNT_MIN..=PARTICLE_COUNT_MAX);
 
         let weights: Vec<f32> = (0..PARTICLE_KINDS)
-            .map(|_| rng.gen_range(0.18..0.48))
+            .map(|_| rng.gen_range(0.08..0.38))
             .collect();
         let weight_sum: f32 = weights.iter().sum();
 
@@ -89,8 +92,8 @@ impl World {
             particles.push(Particle {
                 x: rng.gen_range(WALL_MARGIN..(width as f32 - WALL_MARGIN)),
                 y: rng.gen_range(WALL_MARGIN..(height as f32 - WALL_MARGIN)),
-                vx: rng.gen_range(-0.18..0.18),
-                vy: rng.gen_range(-0.18..0.18),
+                vx: rng.gen_range(-0.22..0.22),
+                vy: rng.gen_range(-0.22..0.22),
                 kind,
                 age: 0,
             });
@@ -102,6 +105,9 @@ impl World {
                     attraction: 0.0,
                     radius: 0.0,
                     repel_radius: 0.0,
+                    orbit: 0.0,
+                    density: 0.0,
+                    drag: 0.96,
                 };
                 PARTICLE_KINDS
             ];
@@ -110,12 +116,19 @@ impl World {
 
         for a in 0..PARTICLE_KINDS {
             for b in 0..PARTICLE_KINDS {
-                let self_bias = if a == b { 0.35 } else { 0.0 };
+                let self_bias = if a == b {
+                    rng.gen_range(-0.15..0.55)
+                } else {
+                    0.0
+                };
 
                 rules[a][b] = Rule {
-                    attraction: rng.gen_range(-1.10..1.45) + self_bias,
-                    radius: rng.gen_range(5.0..28.0),
-                    repel_radius: rng.gen_range(1.4..5.2),
+                    attraction: rng.gen_range(-1.45..1.65) + self_bias,
+                    radius: rng.gen_range(5.0..32.0),
+                    repel_radius: rng.gen_range(1.2..6.5),
+                    orbit: rng.gen_range(-1.25..1.25),
+                    density: rng.gen_range(-0.85..1.20),
+                    drag: rng.gen_range(0.945..0.988),
                 };
             }
         }
@@ -142,7 +155,6 @@ impl World {
         let old_width = self.width;
         let old_height = self.height;
         let old_cells = self.cells.clone();
-
         let mut new_cells = vec![Cell::Dead; new_width * new_height];
 
         for y in 0..old_height.min(new_height) {
@@ -161,14 +173,6 @@ impl World {
         for p in self.particles.iter_mut() {
             p.x = p.x.clamp(0.0, max_x);
             p.y = p.y.clamp(0.0, max_y);
-
-            if p.x <= 0.0 || p.x >= max_x {
-                p.vx *= -WALL_BOUNCE;
-            }
-
-            if p.y <= 0.0 || p.y >= max_y {
-                p.vy *= -WALL_BOUNCE;
-            }
         }
     }
 
@@ -180,7 +184,7 @@ impl World {
             self.step_cells();
         }
 
-        if self.tick % 11 == 0 {
+        if self.tick % 9 == 0 {
             self.seed_cells_from_particles();
         }
     }
@@ -201,11 +205,16 @@ impl World {
         let snapshot = self.particles.clone();
         let max_x = (self.width - 1) as f32;
         let max_y = (self.height - 1) as f32;
+        let center_x = max_x * 0.5;
+        let center_y = max_y * 0.5;
 
         for i in 0..self.particles.len() {
             let current = &snapshot[i];
             let mut ax = 0.0;
             let mut ay = 0.0;
+            let mut local_density = 0usize;
+            let mut drag_accum = 0.0;
+            let mut drag_count = 0.0;
 
             for other in snapshot.iter() {
                 let dx = other.x - current.x;
@@ -223,26 +232,50 @@ impl World {
                     continue;
                 }
 
+                local_density += 1;
+                drag_accum += rule.drag;
+                drag_count += 1.0;
+
                 let nx = dx / dist;
                 let ny = dy / dist;
 
-                let force = if dist < rule.repel_radius {
+                let radial_force = if dist < rule.repel_radius {
                     let pressure = 1.0 - dist / rule.repel_radius;
-                    -1.65 * pressure
+                    -2.15 * pressure
                 } else {
                     let t = (dist - rule.repel_radius) / (rule.radius - rule.repel_radius);
-                    rule.attraction * (1.0 - (2.0 * t - 1.0).abs())
+                    let bell = 1.0 - (2.0 * t - 1.0).abs();
+                    rule.attraction * bell
                 };
 
-                ax += nx * force * 0.018;
-                ay += ny * force * 0.018;
+                let tangent_x = -ny;
+                let tangent_y = nx;
+                let orbit_force = rule.orbit * (1.0 - dist / rule.radius).max(0.0);
+
+                ax += nx * radial_force * 0.018;
+                ay += ny * radial_force * 0.018;
+
+                ax += tangent_x * orbit_force * 0.011;
+                ay += tangent_y * orbit_force * 0.011;
             }
 
-            apply_wall_pressure(current.x, current.y, max_x, max_y, &mut ax, &mut ay);
+            let density_f = local_density as f32;
+
+            if density_f > 6.0 {
+                let pressure = ((density_f - 6.0) / 24.0).min(1.0);
+                let away_x = current.x - center_x;
+                let away_y = current.y - center_y;
+                let len = (away_x * away_x + away_y * away_y).sqrt().max(0.001);
+
+                ax += away_x / len * pressure * 0.018;
+                ay += away_y / len * pressure * 0.018;
+            }
 
             let pulse = entropy_pulse(current.x, current.y, self.seed, self.tick, current.kind);
             ax += pulse.0;
             ay += pulse.1;
+
+            apply_wall_pressure(current.x, current.y, max_x, max_y, &mut ax, &mut ay);
 
             let cx = current.x.round().clamp(0.0, max_x) as usize;
             let cy = current.y.round().clamp(0.0, max_y) as usize;
@@ -250,23 +283,29 @@ impl World {
 
             match self.cell_at(cx, cy) {
                 Cell::Alive | Cell::Born => {
-                    ax *= 1.10;
-                    ay *= 1.10;
+                    ax *= 1.12;
+                    ay *= 1.12;
                 }
                 Cell::Dying => {
-                    ax -= current.vx * 0.05;
-                    ay -= current.vy * 0.05;
+                    ax -= current.vx * 0.065;
+                    ay -= current.vy * 0.065;
                 }
                 Cell::Dead => {}
             }
 
             if pressure >= 8 {
-                ax += rand_push(current.x, current.y, self.seed, self.tick) * 0.015;
-                ay += rand_push(current.y, current.x, self.seed ^ 0xA53A, self.tick) * 0.015;
+                ax += rand_push(current.x, current.y, self.seed, self.tick) * 0.018;
+                ay += rand_push(current.y, current.x, self.seed ^ 0xA53A, self.tick) * 0.018;
             }
 
-            let mut vx = (current.vx + ax).clamp(-0.85, 0.85) * 0.965;
-            let mut vy = (current.vy + ay).clamp(-0.85, 0.85) * 0.965;
+            let drag = if drag_count > 0.0 {
+                drag_accum / drag_count
+            } else {
+                0.965
+            };
+
+            let mut vx = (current.vx + ax).clamp(-1.05, 1.05) * drag;
+            let mut vy = (current.vy + ay).clamp(-1.05, 1.05) * drag;
 
             let mut x = current.x + vx;
             let mut y = current.y + vy;
@@ -406,18 +445,13 @@ fn entropy_pulse(x: f32, y: f32, seed: u64, tick: u64, kind: usize) -> (f32, f32
     let k = kind as f32 + 1.0;
     let seed_phase = (seed % 10_000) as f32 * 0.0007;
 
-    let cx = x - 0.5;
-    let cy = y - 0.5;
-
     let wave_a = ((x * 0.19 * k) + time + seed_phase).sin();
     let wave_b = ((y * 0.17 * k) - time * 1.13 + seed_phase).cos();
     let wave_c = (((x + y) * 0.071 * k) + time * 0.77).sin();
+    let wave_d = (((x - y) * 0.053 * k) - time * 1.41).cos();
 
-    let swirl_x = -cy.signum() * wave_c * 0.0025;
-    let swirl_y = cx.signum() * wave_c * 0.0025;
-
-    let ax = (wave_a + wave_c) * 0.0045 + swirl_x;
-    let ay = (wave_b - wave_c) * 0.0045 + swirl_y;
+    let ax = (wave_a + wave_c - wave_d) * 0.0048;
+    let ay = (wave_b - wave_c + wave_d) * 0.0048;
 
     (ax, ay)
 }
