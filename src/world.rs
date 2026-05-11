@@ -468,8 +468,8 @@ impl World {
 
             match self.cell_at(cx, cy) {
                 Cell::Alive | Cell::Born => {
-                    ax *= 1.12;
-                    ay *= 1.12;
+                    ax *= 0.82;
+                    ay *= 0.82;
                 }
                 Cell::Dying => {
                     ax -= current.vx * 0.065;
