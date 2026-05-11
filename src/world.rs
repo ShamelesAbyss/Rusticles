@@ -113,9 +113,9 @@ impl World {
                 let self_bias = if a == b { 0.35 } else { 0.0 };
 
                 rules[a][b] = Rule {
-                    attraction: rng.gen_range(-0.75..1.15) + self_bias,
-                    radius: rng.gen_range(7.0..22.0),
-                    repel_radius: rng.gen_range(1.6..3.8),
+                    attraction: rng.gen_range(-1.10..1.45) + self_bias,
+                    radius: rng.gen_range(5.0..28.0),
+                    repel_radius: rng.gen_range(1.4..5.2),
                 };
             }
         }
@@ -239,6 +239,10 @@ impl World {
             }
 
             apply_wall_pressure(current.x, current.y, max_x, max_y, &mut ax, &mut ay);
+
+            let pulse = entropy_pulse(current.x, current.y, self.seed, self.tick, current.kind);
+            ax += pulse.0;
+            ay += pulse.1;
 
             let cx = current.x.round().clamp(0.0, max_x) as usize;
             let cy = current.y.round().clamp(0.0, max_y) as usize;
@@ -395,6 +399,27 @@ fn bounce_axis(pos: &mut f32, vel: &mut f32, min: f32, max: f32) {
     }
 
     *pos = pos.clamp(min, max);
+}
+
+fn entropy_pulse(x: f32, y: f32, seed: u64, tick: u64, kind: usize) -> (f32, f32) {
+    let time = tick as f32 * 0.035;
+    let k = kind as f32 + 1.0;
+    let seed_phase = (seed % 10_000) as f32 * 0.0007;
+
+    let cx = x - 0.5;
+    let cy = y - 0.5;
+
+    let wave_a = ((x * 0.19 * k) + time + seed_phase).sin();
+    let wave_b = ((y * 0.17 * k) - time * 1.13 + seed_phase).cos();
+    let wave_c = (((x + y) * 0.071 * k) + time * 0.77).sin();
+
+    let swirl_x = -cy.signum() * wave_c * 0.0025;
+    let swirl_y = cx.signum() * wave_c * 0.0025;
+
+    let ax = (wave_a + wave_c) * 0.0045 + swirl_x;
+    let ay = (wave_b - wave_c) * 0.0045 + swirl_y;
+
+    (ax, ay)
 }
 
 fn rand_push(x: f32, y: f32, seed: u64, tick: u64) -> f32 {
