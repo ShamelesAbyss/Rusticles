@@ -414,6 +414,7 @@ impl World {
 
                     let resonance = resonance_force(dist, angle, self.tick, rule);
                     let radial_force = base_force + resonance;
+                    let density_shape = rule.density * (1.0 - dist / rule.radius).max(0.0) * 0.006;
 
                     let tangent_x = -ny;
                     let tangent_y = nx;
@@ -421,6 +422,8 @@ impl World {
                     let angular_gate = (angle * rule.symmetry).cos();
 
                     ax += nx * radial_force * 0.018;
+                    ax += nx * density_shape;
+                    ay += ny * density_shape;
                     ay += ny * radial_force * 0.018;
                     ax += tangent_x * orbit_force * angular_gate * 0.014;
                     ay += tangent_y * orbit_force * angular_gate * 0.014;
