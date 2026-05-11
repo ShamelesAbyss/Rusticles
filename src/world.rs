@@ -12,7 +12,7 @@ const WALL_PUSH: f32 = 0.075;
 const WALL_BOUNCE: f32 = 0.86;
 const PHI: f32 = 1.618_034;
 const BUCKET_SIZE: f32 = 8.0;
-const MAX_NEIGHBOR_INTERACTIONS: usize = 96;
+const MAX_NEIGHBOR_INTERACTIONS: usize = 48;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Cell {
@@ -578,7 +578,7 @@ impl World {
                     Cell::Dead => {
                         if neighbors == 3 && pressure >= 2 {
                             Cell::Born
-                        } else if pressure >= 7 {
+                        } else if pressure >= 12 {
                             Cell::Born
                         } else {
                             Cell::Dead
@@ -586,7 +586,7 @@ impl World {
                     }
                     Cell::Born => Cell::Alive,
                     Cell::Alive => {
-                        if neighbors == 2 || neighbors == 3 || pressure >= 4 {
+                        if neighbors == 2 || neighbors == 3 || pressure >= 7 {
                             Cell::Alive
                         } else {
                             Cell::Dying
@@ -614,7 +614,7 @@ impl World {
             let idx = y * self.width + x;
             let pressure = self.runtime.pressure_map[idx] as usize;
 
-            if matches!(self.cells[idx], Cell::Dead) && pressure >= 5 {
+            if matches!(self.cells[idx], Cell::Dead) && pressure >= 10 {
                 self.cells[idx] = Cell::Born;
             }
         }
