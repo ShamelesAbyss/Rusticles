@@ -384,12 +384,14 @@ impl World {
                         return;
                     }
 
-                    let dist = dist_sq.sqrt();
                     let rule = &self.rules[current.kind][other.kind];
+                    let radius_sq = rule.radius * rule.radius;
 
-                    if dist > rule.radius {
+                    if dist_sq > radius_sq {
                         return;
                     }
+
+                    let dist = dist_sq.sqrt();
 
                     neighbor_interactions += 1;
                     local_density += 1;
