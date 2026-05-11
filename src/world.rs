@@ -270,7 +270,7 @@ impl World {
             self.perf.seed_ms = seed_start.elapsed().as_secs_f32() * 1000.0;
         }
 
-        if self.tick % 240 == 0 {
+        if false && self.tick % 240 == 0 {
             self.mutate_rules();
         }
 
