@@ -12,7 +12,7 @@ const WALL_PUSH: f32 = 0.075;
 const WALL_BOUNCE: f32 = 0.86;
 const PHI: f32 = 1.618_034;
 const BUCKET_SIZE: f32 = 8.0;
-const MAX_NEIGHBOR_INTERACTIONS: usize = 64;
+const MAX_NEIGHBOR_INTERACTIONS: usize = 96;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Cell {
