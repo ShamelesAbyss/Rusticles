@@ -598,7 +598,7 @@ impl HabitatField {
             phase_b: rng.gen_range(0.0..std::f32::consts::TAU),
             symmetry: rng.gen_range(3.0f32..14.0f32).round(),
             turbulence: rng.gen_range(0.002..0.022),
-            center_pull: rng.gen_range(-0.010..0.026),
+            center_pull: rng.gen_range(0.000..0.018),
         }
     }
 }
