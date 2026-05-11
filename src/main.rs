@@ -4,7 +4,7 @@ mod world;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyEventKind},
     terminal as cterm,
 };
 use std::time::{Duration, Instant};
@@ -35,6 +35,10 @@ fn main() -> Result<()> {
 
         while event::poll(Duration::from_millis(2))? {
             if let Event::Key(key) = event::read()? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+
                 match key.code {
                     KeyCode::Char('q') => {
                         memory::save(SAVE_PATH, &world)?;
@@ -53,8 +57,9 @@ fn main() -> Result<()> {
                         let (w, h) = viewport_size();
                         world = World::new_random(w, h);
                     }
-                    KeyCode::Char(' ') => {
+                    KeyCode::Char(' ') | KeyCode::Char('p') => {
                         paused = !paused;
+                        last_render = Instant::now() - render_delay;
                     }
                     KeyCode::Char('+') | KeyCode::Char('=') => {
                         tick_delay = tick_delay.saturating_sub(Duration::from_millis(5));
