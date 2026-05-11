@@ -2,7 +2,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
-const PARTICLE_KINDS: usize = 4;
+const PARTICLE_KINDS: usize = 8;
 const PARTICLE_COUNT_MIN: usize = 500;
 const PARTICLE_COUNT_MAX: usize = 1500;
 

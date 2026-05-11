@@ -22,7 +22,7 @@ pub struct Terminal {
 #[derive(Clone, Copy, Debug)]
 struct CellStack {
     total: usize,
-    kinds: [usize; 4],
+    kinds: [usize; 8],
 }
 
 impl Terminal {
@@ -60,7 +60,7 @@ impl Terminal {
             let mut stacks = vec![
                 CellStack {
                     total: 0,
-                    kinds: [0; 4],
+                    kinds: [0; 8],
                 };
                 draw_w.saturating_mul(draw_h)
             ];
@@ -227,7 +227,7 @@ impl Drop for Terminal {
     }
 }
 
-fn dominant_kind(kinds: [usize; 4]) -> usize {
+fn dominant_kind(kinds: [usize; 8]) -> usize {
     let mut best_kind = 0;
     let mut best_count = 0;
 
@@ -246,6 +246,10 @@ fn species_color(kind: usize) -> Color {
         0 => Color::Rgb(255, 220, 40),
         1 => Color::Rgb(255, 80, 255),
         2 => Color::Rgb(40, 180, 255),
-        _ => Color::Rgb(255, 55, 55),
+        3 => Color::Rgb(255, 55, 55),
+        4 => Color::Rgb(80, 255, 90),
+        5 => Color::Rgb(170, 80, 255),
+        6 => Color::Rgb(255, 140, 30),
+        _ => Color::Rgb(230, 255, 255),
     }
 }
