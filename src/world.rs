@@ -1,6 +1,7 @@
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 
 const PARTICLE_KINDS: usize = 8;
 const PARTICLE_COUNT_MIN: usize = 500;
@@ -67,6 +68,17 @@ pub struct HabitatField {
     pub center_pull: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PerfStats {
+    pub step_ms: f32,
+    pub particle_ms: f32,
+    pub cell_ms: f32,
+    pub seed_ms: f32,
+    pub bucket_count: usize,
+    pub max_bucket_load: usize,
+    pub avg_bucket_load: f32,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct World {
     pub seed: u64,
@@ -78,6 +90,15 @@ pub struct World {
     pub rules: Vec<Vec<Rule>>,
     #[serde(default = "default_habitat")]
     pub habitat: HabitatField,
+
+    #[serde(skip, default)]
+    runtime: RuntimeBuffers,
+
+    #[serde(skip, default)]
+    cached_kind_counts: [usize; PARTICLE_KINDS],
+
+    #[serde(skip, default)]
+    perf: PerfStats,
 }
 
 impl World {
@@ -89,12 +110,10 @@ impl World {
     pub fn from_seed(seed: u64, width: usize, height: usize) -> Self {
         let width = width.max(40);
         let height = height.max(12);
-
         let mut rng = StdRng::seed_from_u64(seed);
         let habitat = HabitatField::random(&mut rng);
 
         let mut cells = vec![Cell::Dead; width * height];
-
         for cell in cells.iter_mut() {
             if rng.gen::<f32>() < 0.012 {
                 *cell = Cell::Alive;
@@ -102,14 +121,12 @@ impl World {
         }
 
         let total = rng.gen_range(PARTICLE_COUNT_MIN..=PARTICLE_COUNT_MAX);
-
         let weights: Vec<f32> = (0..PARTICLE_KINDS)
             .map(|_| rng.gen_range(0.08..0.38))
             .collect();
         let weight_sum: f32 = weights.iter().sum();
 
         let mut particles = Vec::with_capacity(total);
-
         for _ in 0..total {
             let mut roll = rng.gen::<f32>() * weight_sum;
             let mut kind = 0;
@@ -174,7 +191,7 @@ impl World {
             }
         }
 
-        Self {
+        let mut world = Self {
             seed,
             tick: 0,
             width,
@@ -183,7 +200,14 @@ impl World {
             particles,
             rules,
             habitat,
-        }
+            runtime: RuntimeBuffers::default(),
+            cached_kind_counts: [0; PARTICLE_KINDS],
+            perf: PerfStats::default(),
+        };
+
+        world.prepare_runtime();
+        world.recount_kinds();
+        world
     }
 
     pub fn resize_to(&mut self, new_width: usize, new_height: usize) {
@@ -216,35 +240,74 @@ impl World {
             p.x = p.x.clamp(0.0, max_x);
             p.y = p.y.clamp(0.0, max_y);
         }
+
+        self.prepare_runtime();
     }
 
     pub fn step(&mut self) {
+        let step_start = Instant::now();
+
+        self.prepare_runtime();
         self.tick += 1;
+
+        let particle_start = Instant::now();
         self.step_particles();
+        self.perf.particle_ms = particle_start.elapsed().as_secs_f32() * 1000.0;
+
+        self.perf.cell_ms = 0.0;
+        self.perf.seed_ms = 0.0;
 
         if self.tick % 2 == 0 {
+            let cell_start = Instant::now();
             self.step_cells();
+            self.perf.cell_ms = cell_start.elapsed().as_secs_f32() * 1000.0;
         }
 
         if self.tick % 9 == 0 {
+            let seed_start = Instant::now();
             self.seed_cells_from_particles();
+            self.perf.seed_ms = seed_start.elapsed().as_secs_f32() * 1000.0;
         }
 
         if self.tick % 240 == 0 {
             self.mutate_rules();
         }
+
+        self.recount_kinds();
+        self.perf.step_ms = step_start.elapsed().as_secs_f32() * 1000.0;
     }
 
     pub fn kind_count(&self, kind: usize) -> usize {
-        self.particles.iter().filter(|p| p.kind == kind).count()
+        self.cached_kind_counts.get(kind).copied().unwrap_or(0)
+    }
+
+    pub fn kind_counts(&self) -> [usize; PARTICLE_KINDS] {
+        self.cached_kind_counts
+    }
+
+    pub fn perf(&self) -> PerfStats {
+        self.perf
     }
 
     pub fn cell_at(&self, x: usize, y: usize) -> Cell {
         if x >= self.width || y >= self.height {
             return Cell::Dead;
         }
-
         self.cells[y * self.width + x]
+    }
+
+    fn prepare_runtime(&mut self) {
+        self.runtime.resize(self.width, self.height);
+    }
+
+    fn recount_kinds(&mut self) {
+        self.cached_kind_counts = [0; PARTICLE_KINDS];
+
+        for p in self.particles.iter() {
+            if p.kind < PARTICLE_KINDS {
+                self.cached_kind_counts[p.kind] += 1;
+            }
+        }
     }
 
     fn mutate_rules(&mut self) {
@@ -252,7 +315,6 @@ impl World {
             for b in 0..self.rules[a].len() {
                 let wave = mutation_wave(self.seed, self.tick, a, b);
                 let counter = mutation_wave(self.seed ^ 0xA53A_9E37, self.tick, b, a);
-
                 let rule = &mut self.rules[a][b];
 
                 rule.attraction = (rule.attraction + wave * 0.035).clamp(-1.95, 2.05);
@@ -269,15 +331,30 @@ impl World {
 
     fn step_particles(&mut self) {
         let snapshot = self.particles.clone();
-        let pressure_map = build_pressure_map(&snapshot, self.width, self.height);
-        let buckets = SpatialBuckets::new(&snapshot, self.width, self.height);
+
+        fill_pressure_map(
+            &mut self.runtime.pressure_map,
+            &snapshot,
+            self.width,
+            self.height,
+        );
+
+        self.runtime
+            .spatial
+            .rebuild(&snapshot, self.width, self.height);
+
+        self.perf.bucket_count = self.runtime.spatial.bucket_count();
+        self.perf.max_bucket_load = self.runtime.spatial.max_bucket_load();
+        self.perf.avg_bucket_load = self.runtime.spatial.avg_bucket_load();
 
         let max_x = (self.width - 1) as f32;
         let max_y = (self.height - 1) as f32;
         let center_x = max_x * 0.5;
         let center_y = max_y * 0.5;
 
-        for i in 0..self.particles.len() {
+        let mut next_particles = snapshot.clone();
+
+        for i in 0..snapshot.len() {
             let current = &snapshot[i];
             let mut ax = 0.0;
             let mut ay = 0.0;
@@ -286,63 +363,66 @@ impl World {
             let mut drag_count = 0.0;
 
             let search_radius = self.max_radius_for_kind(current.kind);
-            let nearby = buckets.nearby_indices(current.x, current.y, search_radius);
 
-            for other_index in nearby {
-                if other_index == i {
-                    continue;
-                }
+            self.runtime.spatial.for_nearby_indices(
+                current.x,
+                current.y,
+                search_radius,
+                |other_index| {
+                    if other_index == i {
+                        return;
+                    }
 
-                let other = &snapshot[other_index];
-                let dx = other.x - current.x;
-                let dy = other.y - current.y;
-                let dist_sq = dx * dx + dy * dy;
+                    let other = &snapshot[other_index];
+                    let dx = other.x - current.x;
+                    let dy = other.y - current.y;
+                    let dist_sq = dx * dx + dy * dy;
 
-                if dist_sq <= 0.0001 {
-                    continue;
-                }
+                    if dist_sq <= 0.0001 {
+                        return;
+                    }
 
-                let dist = dist_sq.sqrt();
-                let rule = &self.rules[current.kind][other.kind];
+                    let dist = dist_sq.sqrt();
+                    let rule = &self.rules[current.kind][other.kind];
 
-                if dist > rule.radius {
-                    continue;
-                }
+                    if dist > rule.radius {
+                        return;
+                    }
 
-                local_density += 1;
-                drag_accum += rule.drag;
-                drag_count += 1.0;
+                    local_density += 1;
+                    drag_accum += rule.drag;
+                    drag_count += 1.0;
 
-                let nx = dx / dist;
-                let ny = dy / dist;
-                let angle = dy.atan2(dx);
+                    let nx = dx / dist;
+                    let ny = dy / dist;
+                    let angle = dy.atan2(dx);
 
-                let base_force = if dist < rule.repel_radius {
-                    let pressure = 1.0 - dist / rule.repel_radius;
-                    -2.20 * pressure
-                } else {
-                    let t = (dist - rule.repel_radius) / (rule.radius - rule.repel_radius);
-                    let bell = 1.0 - (2.0 * t - 1.0).abs();
-                    rule.attraction * bell
-                };
+                    let base_force = if dist < rule.repel_radius {
+                        let pressure = 1.0 - dist / rule.repel_radius;
+                        -2.20 * pressure
+                    } else {
+                        let denom = (rule.radius - rule.repel_radius).max(0.001);
+                        let t = (dist - rule.repel_radius) / denom;
+                        let bell = 1.0 - (2.0 * t - 1.0).abs();
+                        rule.attraction * bell
+                    };
 
-                let resonance = resonance_force(dist, angle, self.tick, rule);
-                let radial_force = base_force + resonance;
+                    let resonance = resonance_force(dist, angle, self.tick, rule);
+                    let radial_force = base_force + resonance;
 
-                let tangent_x = -ny;
-                let tangent_y = nx;
-                let orbit_force = rule.orbit * (1.0 - dist / rule.radius).max(0.0);
-                let angular_gate = (angle * rule.symmetry).cos();
+                    let tangent_x = -ny;
+                    let tangent_y = nx;
+                    let orbit_force = rule.orbit * (1.0 - dist / rule.radius).max(0.0);
+                    let angular_gate = (angle * rule.symmetry).cos();
 
-                ax += nx * radial_force * 0.018;
-                ay += ny * radial_force * 0.018;
-
-                ax += tangent_x * orbit_force * angular_gate * 0.014;
-                ay += tangent_y * orbit_force * angular_gate * 0.014;
-            }
+                    ax += nx * radial_force * 0.018;
+                    ay += ny * radial_force * 0.018;
+                    ax += tangent_x * orbit_force * angular_gate * 0.014;
+                    ay += tangent_y * orbit_force * angular_gate * 0.014;
+                },
+            );
 
             let density_f = local_density as f32;
-
             if density_f > 6.0 {
                 let pressure = ((density_f - 6.0) / 24.0).min(1.0);
                 let away_x = current.x - center_x;
@@ -374,7 +454,7 @@ impl World {
 
             let cx = current.x.round().clamp(0.0, max_x) as usize;
             let cy = current.y.round().clamp(0.0, max_y) as usize;
-            let pressure = pressure_map[cy * self.width + cx] as usize;
+            let pressure = self.runtime.pressure_map[cy * self.width + cx] as usize;
 
             match self.cell_at(cx, cy) {
                 Cell::Alive | Cell::Born => {
@@ -401,19 +481,20 @@ impl World {
 
             let mut vx = (current.vx + ax).clamp(-1.08, 1.08) * drag;
             let mut vy = (current.vy + ay).clamp(-1.08, 1.08) * drag;
-
             let mut x = current.x + vx;
             let mut y = current.y + vy;
 
             bounce_axis(&mut x, &mut vx, 0.0, max_x);
             bounce_axis(&mut y, &mut vy, 0.0, max_y);
 
-            self.particles[i].x = x;
-            self.particles[i].y = y;
-            self.particles[i].vx = vx;
-            self.particles[i].vy = vy;
-            self.particles[i].age += 1;
+            next_particles[i].x = x;
+            next_particles[i].y = y;
+            next_particles[i].vx = vx;
+            next_particles[i].vy = vy;
+            next_particles[i].age = current.age.saturating_add(1);
         }
+
+        self.particles = next_particles;
     }
 
     fn max_radius_for_kind(&self, kind: usize) -> f32 {
@@ -424,17 +505,29 @@ impl World {
     }
 
     fn step_cells(&mut self) {
-        let old = self.cells.clone();
-        let pressure_map = build_pressure_map(&self.particles, self.width, self.height);
-        let mut next = vec![Cell::Dead; self.width * self.height];
+        self.runtime.old_cells.clear();
+        self.runtime.old_cells.extend_from_slice(&self.cells);
+
+        fill_pressure_map(
+            &mut self.runtime.pressure_map,
+            &self.particles,
+            self.width,
+            self.height,
+        );
+
+        self.runtime.next_cells.clear();
+        self.runtime
+            .next_cells
+            .resize(self.width * self.height, Cell::Dead);
 
         for y in 0..self.height {
             for x in 0..self.width {
                 let idx = y * self.width + x;
-                let neighbors = live_neighbors(&old, self.width, self.height, x, y);
-                let pressure = pressure_map[idx] as usize;
+                let neighbors =
+                    live_neighbors(&self.runtime.old_cells, self.width, self.height, x, y);
+                let pressure = self.runtime.pressure_map[idx] as usize;
 
-                next[idx] = match old[idx] {
+                self.runtime.next_cells[idx] = match self.runtime.old_cells[idx] {
                     Cell::Dead => {
                         if neighbors == 3 && pressure >= 2 {
                             Cell::Born
@@ -457,17 +550,22 @@ impl World {
             }
         }
 
-        self.cells = next;
+        std::mem::swap(&mut self.cells, &mut self.runtime.next_cells);
     }
 
     fn seed_cells_from_particles(&mut self) {
-        let pressure_map = build_pressure_map(&self.particles, self.width, self.height);
+        fill_pressure_map(
+            &mut self.runtime.pressure_map,
+            &self.particles,
+            self.width,
+            self.height,
+        );
 
         for p in self.particles.iter() {
             let x = p.x.round().clamp(0.0, (self.width - 1) as f32) as usize;
             let y = p.y.round().clamp(0.0, (self.height - 1) as f32) as usize;
             let idx = y * self.width + x;
-            let pressure = pressure_map[idx] as usize;
+            let pressure = self.runtime.pressure_map[idx] as usize;
 
             if matches!(self.cells[idx], Cell::Dead) && pressure >= 5 {
                 self.cells[idx] = Cell::Born;
@@ -495,6 +593,35 @@ impl HabitatField {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct RuntimeBuffers {
+    pressure_map: Vec<u16>,
+    old_cells: Vec<Cell>,
+    next_cells: Vec<Cell>,
+    spatial: SpatialBuckets,
+}
+
+impl RuntimeBuffers {
+    fn resize(&mut self, width: usize, height: usize) {
+        let len = width * height;
+
+        if self.pressure_map.len() != len {
+            self.pressure_map.resize(len, 0);
+        }
+
+        if self.old_cells.capacity() < len {
+            self.old_cells.reserve(len - self.old_cells.capacity());
+        }
+
+        if self.next_cells.capacity() < len {
+            self.next_cells.reserve(len - self.next_cells.capacity());
+        }
+
+        self.spatial.resize(width, height);
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 struct SpatialBuckets {
     buckets: Vec<Vec<usize>>,
     cols: usize,
@@ -502,30 +629,44 @@ struct SpatialBuckets {
 }
 
 impl SpatialBuckets {
-    fn new(particles: &[Particle], width: usize, height: usize) -> Self {
+    fn resize(&mut self, width: usize, height: usize) {
         let cols = ((width as f32) / BUCKET_SIZE).ceil().max(1.0) as usize;
         let rows = ((height as f32) / BUCKET_SIZE).ceil().max(1.0) as usize;
-        let mut buckets = vec![Vec::new(); cols * rows];
+        let needed = cols * rows;
 
-        for (idx, p) in particles.iter().enumerate() {
-            let bx = ((p.x / BUCKET_SIZE).floor() as usize).min(cols - 1);
-            let by = ((p.y / BUCKET_SIZE).floor() as usize).min(rows - 1);
-            buckets[by * cols + bx].push(idx);
-        }
-
-        Self {
-            buckets,
-            cols,
-            rows,
+        if self.cols != cols || self.rows != rows || self.buckets.len() != needed {
+            self.cols = cols;
+            self.rows = rows;
+            self.buckets.clear();
+            self.buckets.resize_with(needed, Vec::new);
         }
     }
 
-    fn nearby_indices(&self, x: f32, y: f32, radius: f32) -> Vec<usize> {
+    fn rebuild(&mut self, particles: &[Particle], width: usize, height: usize) {
+        self.resize(width, height);
+
+        for bucket in self.buckets.iter_mut() {
+            bucket.clear();
+        }
+
+        for (idx, p) in particles.iter().enumerate() {
+            let bx = ((p.x / BUCKET_SIZE).floor() as usize).min(self.cols - 1);
+            let by = ((p.y / BUCKET_SIZE).floor() as usize).min(self.rows - 1);
+            self.buckets[by * self.cols + bx].push(idx);
+        }
+    }
+
+    fn for_nearby_indices<F>(&self, x: f32, y: f32, radius: f32, mut f: F)
+    where
+        F: FnMut(usize),
+    {
+        if self.cols == 0 || self.rows == 0 {
+            return;
+        }
+
         let bx = ((x / BUCKET_SIZE).floor() as isize).clamp(0, (self.cols - 1) as isize);
         let by = ((y / BUCKET_SIZE).floor() as isize).clamp(0, (self.rows - 1) as isize);
         let range = (radius / BUCKET_SIZE).ceil() as isize + 1;
-
-        let mut out = Vec::new();
 
         for oy in -range..=range {
             for ox in -range..=range {
@@ -536,20 +677,40 @@ impl SpatialBuckets {
                     continue;
                 }
 
-                out.extend(
-                    self.buckets[ny as usize * self.cols + nx as usize]
-                        .iter()
-                        .copied(),
-                );
+                let bucket_idx = ny as usize * self.cols + nx as usize;
+                for other_index in self.buckets[bucket_idx].iter().copied() {
+                    f(other_index);
+                }
             }
         }
+    }
 
-        out
+    fn bucket_count(&self) -> usize {
+        self.buckets.len()
+    }
+
+    fn max_bucket_load(&self) -> usize {
+        self.buckets.iter().map(Vec::len).max().unwrap_or(0)
+    }
+
+    fn avg_bucket_load(&self) -> f32 {
+        if self.buckets.is_empty() {
+            return 0.0;
+        }
+
+        let total: usize = self.buckets.iter().map(Vec::len).sum();
+        total as f32 / self.buckets.len() as f32
     }
 }
 
-fn build_pressure_map(particles: &[Particle], width: usize, height: usize) -> Vec<u16> {
-    let mut map = vec![0u16; width * height];
+fn fill_pressure_map(map: &mut Vec<u16>, particles: &[Particle], width: usize, height: usize) {
+    let len = width * height;
+
+    if map.len() != len {
+        map.resize(len, 0);
+    } else {
+        map.fill(0);
+    }
 
     for p in particles.iter() {
         let cx = p.x.round() as isize;
@@ -569,8 +730,6 @@ fn build_pressure_map(particles: &[Particle], width: usize, height: usize) -> Ve
             }
         }
     }
-
-    map
 }
 
 fn default_drag() -> f32 {
@@ -589,7 +748,7 @@ fn mutation_wave(seed: u64, tick: u64, a: usize, b: usize) -> f32 {
     let x = (a as f32 + 1.0) * 0.73 + sa;
     let y = (b as f32 + 1.0) * 1.11 + sb;
 
-    ((t + x).sin() * 0.65 + (t * 0.618_034 + y).cos() * 0.35).clamp(-1.0, 1.0)
+    ((t + x).sin() * 0.65 + (t * PHI + y).cos() * 0.35).clamp(-1.0, 1.0)
 }
 
 fn habitat_force(
@@ -606,7 +765,6 @@ fn habitat_force(
     let k = kind as f32 + 1.0;
     let cx = width as f32 * 0.5;
     let cy = height as f32 * 0.5;
-
     let nx = (x - cx) / cx.max(1.0);
     let ny = (y - cy) / cy.max(1.0);
     let angle = ny.atan2(nx);
@@ -616,7 +774,6 @@ fn habitat_force(
     let wave_b = (y * habitat.wave_y - time * PHI + habitat.phase_b + k * 0.17).cos();
     let wave_c = ((x + y) * habitat.diagonal_wave + time * 0.77).sin();
     let symmetry_gate = (angle * habitat.symmetry + time * 0.23).cos();
-
     let terrain = wave_a + wave_b + wave_c * symmetry_gate;
 
     let dx =
@@ -646,11 +803,12 @@ fn resonance_force(dist: f32, angle: f32, tick: u64, rule: &Rule) -> f32 {
     let time = tick as f32 * 0.028 * rule.pulse;
     let decay = (1.0 - dist / rule.radius).max(0.0);
     let golden = (dist * 0.37 * PHI * rule.harmonic + time).sin();
+
     let prime = (dist * 0.23 * 3.0 + time * 1.17).sin()
         + (dist * 0.17 * 5.0 - time * 0.83).sin() * 0.5
         + (dist * 0.11 * 7.0 + time * 0.41).sin() * 0.25;
-    let angular = (angle * rule.symmetry + time * 0.35).cos();
 
+    let angular = (angle * rule.symmetry + time * 0.35).cos();
     (golden + prime) * angular * decay * rule.resonance
 }
 

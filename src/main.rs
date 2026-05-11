@@ -21,8 +21,8 @@ fn main() -> Result<()> {
     world.resize_to(world_w, world_h);
 
     let mut paused = false;
-    let mut tick_delay = Duration::from_millis(45);
-    let render_delay = Duration::from_millis(100);
+    let mut tick_delay = Duration::from_millis(16);
+    let render_delay = Duration::from_millis(33);
 
     let mut last_tick = Instant::now();
     let mut last_render = Instant::now() - render_delay;
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
             world.resize_to(new_w, new_h);
         }
 
-        while event::poll(Duration::from_millis(2))? {
+        while event::poll(Duration::from_millis(1))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind != KeyEventKind::Press {
                     continue;
@@ -62,13 +62,13 @@ fn main() -> Result<()> {
                         last_render = Instant::now() - render_delay;
                     }
                     KeyCode::Char('+') | KeyCode::Char('=') => {
-                        tick_delay = tick_delay.saturating_sub(Duration::from_millis(5));
-                        if tick_delay < Duration::from_millis(10) {
-                            tick_delay = Duration::from_millis(10);
+                        tick_delay = tick_delay.saturating_sub(Duration::from_millis(2));
+                        if tick_delay < Duration::from_millis(4) {
+                            tick_delay = Duration::from_millis(4);
                         }
                     }
                     KeyCode::Char('-') => {
-                        tick_delay += Duration::from_millis(5);
+                        tick_delay += Duration::from_millis(2);
                         if tick_delay > Duration::from_millis(250) {
                             tick_delay = Duration::from_millis(250);
                         }
@@ -88,15 +88,14 @@ fn main() -> Result<()> {
             last_render = Instant::now();
         }
 
-        std::thread::sleep(Duration::from_millis(3));
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
 
 fn viewport_size() -> (usize, usize) {
     let (tw, th) = cterm::size().unwrap_or((120, 42));
-
     let width = tw.saturating_sub(2).max(40) as usize;
-    let height = th.saturating_sub(6).max(12) as usize;
+    let height = th.saturating_sub(7).max(12) as usize;
 
     (width, height)
 }

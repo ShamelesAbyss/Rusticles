@@ -28,7 +28,6 @@ struct CellStack {
 impl Terminal {
     pub fn enter() -> Result<Self> {
         terminal::enable_raw_mode()?;
-
         let mut out = stdout();
         execute!(out, EnterAlternateScreen, cursor::Hide)?;
 
@@ -39,13 +38,13 @@ impl Terminal {
         Ok(Self { inner })
     }
 
-    pub fn draw(&mut self, world: &World, paused: bool, _tick_delay: Duration) -> Result<()> {
+    pub fn draw(&mut self, world: &World, paused: bool, tick_delay: Duration) -> Result<()> {
         self.inner.draw(|frame| {
             let area = frame.size();
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Min(8), Constraint::Length(4)])
+                .constraints([Constraint::Min(8), Constraint::Length(5)])
                 .split(area);
 
             let field_area = chunks[0];
@@ -53,7 +52,6 @@ impl Terminal {
 
             let draw_w = field_area.width.saturating_sub(2) as usize;
             let draw_h = field_area.height.saturating_sub(2) as usize;
-
             let draw_w = draw_w.min(world.width);
             let draw_h = draw_h.min(world.height);
 
@@ -81,7 +79,7 @@ impl Terminal {
                 }
 
                 let idx = y * draw_w + x;
-                let kind = p.kind.min(3);
+                let kind = p.kind.min(7);
 
                 stacks[idx].total += 1;
                 stacks[idx].kinds[kind] += 1;
@@ -158,6 +156,9 @@ impl Terminal {
                 Color::Green
             };
 
+            let counts = world.kind_counts();
+            let perf = world.perf();
+
             let hud_lines = vec![
                 Line::from(vec![
                     Span::styled(" RUSTICLES ", Style::default().fg(Color::Cyan)),
@@ -193,25 +194,39 @@ impl Terminal {
                 ]),
                 Line::from(vec![
                     Span::styled(" amber ", Style::default().fg(species_color(0))),
-                    Span::raw(world.kind_count(0).to_string()),
+                    Span::raw(counts[0].to_string()),
                     Span::styled(" | magenta ", Style::default().fg(species_color(1))),
-                    Span::raw(world.kind_count(1).to_string()),
+                    Span::raw(counts[1].to_string()),
                     Span::styled(" | cyan ", Style::default().fg(species_color(2))),
-                    Span::raw(world.kind_count(2).to_string()),
+                    Span::raw(counts[2].to_string()),
                     Span::styled(" | red ", Style::default().fg(species_color(3))),
-                    Span::raw(world.kind_count(3).to_string()),
+                    Span::raw(counts[3].to_string()),
                     Span::styled(" | green ", Style::default().fg(species_color(4))),
-                    Span::raw(world.kind_count(4).to_string()),
+                    Span::raw(counts[4].to_string()),
                     Span::styled(" | violet ", Style::default().fg(species_color(5))),
-                    Span::raw(world.kind_count(5).to_string()),
+                    Span::raw(counts[5].to_string()),
                     Span::styled(" | orange ", Style::default().fg(species_color(6))),
-                    Span::raw(world.kind_count(6).to_string()),
+                    Span::raw(counts[6].to_string()),
                     Span::styled(" | white ", Style::default().fg(species_color(7))),
-                    Span::raw(world.kind_count(7).to_string()),
+                    Span::raw(counts[7].to_string()),
                 ]),
                 Line::from(vec![
-                    Span::raw(" density: • ● O @ # | q save+quit | s save | n new | r reroll | space/p pause "),
+                    Span::styled(" perf ", Style::default().fg(Color::Cyan)),
+                    Span::raw(format!(
+                        "step {:.2}ms | particle {:.2}ms | cell {:.2}ms | seed {:.2}ms | buckets {} max {} avg {:.1} | tick {}ms",
+                        perf.step_ms,
+                        perf.particle_ms,
+                        perf.cell_ms,
+                        perf.seed_ms,
+                        perf.bucket_count,
+                        perf.max_bucket_load,
+                        perf.avg_bucket_load,
+                        tick_delay.as_millis()
+                    )),
                 ]),
+                Line::from(vec![Span::raw(
+                    " density: • ● O @ # | q save+quit | s save | n new | r reroll | space/p pause | +/- speed ",
+                )]),
             ];
 
             let hud = Paragraph::new(hud_lines).block(
