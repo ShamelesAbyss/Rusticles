@@ -208,6 +208,10 @@ impl World {
         if self.tick % 9 == 0 {
             self.seed_cells_from_particles();
         }
+
+        if self.tick % 240 == 0 {
+            self.mutate_rules();
+        }
     }
 
     pub fn kind_count(&self, kind: usize) -> usize {
@@ -220,6 +224,26 @@ impl World {
         }
 
         self.cells[y * self.width + x]
+    }
+
+    fn mutate_rules(&mut self) {
+        for a in 0..self.rules.len() {
+            for b in 0..self.rules[a].len() {
+                let wave = mutation_wave(self.seed, self.tick, a, b);
+                let counter = mutation_wave(self.seed ^ 0xA53A_9E37, self.tick, b, a);
+
+                let rule = &mut self.rules[a][b];
+
+                rule.attraction = (rule.attraction + wave * 0.035).clamp(-1.95, 2.05);
+                rule.orbit = (rule.orbit + counter * 0.025).clamp(-1.85, 1.85);
+                rule.resonance = (rule.resonance + wave * counter * 0.030).clamp(-1.75, 1.75);
+                rule.pulse = (rule.pulse + wave.abs() * 0.010 - 0.004).clamp(0.20, 2.40);
+                rule.harmonic = (rule.harmonic + counter * 0.012).clamp(0.25, 3.25);
+                rule.radius = (rule.radius + wave * 0.080).clamp(4.0, 38.0);
+                rule.repel_radius = (rule.repel_radius + counter * 0.018).clamp(1.0, 7.5);
+                rule.drag = (rule.drag + wave * 0.0008).clamp(0.935, 0.992);
+            }
+        }
     }
 
     fn step_particles(&mut self) {
@@ -494,6 +518,16 @@ fn build_pressure_map(particles: &[Particle], width: usize, height: usize) -> Ve
     }
 
     map
+}
+
+fn mutation_wave(seed: u64, tick: u64, a: usize, b: usize) -> f32 {
+    let t = tick as f32 * 0.004;
+    let sa = ((seed >> ((a % 8) * 7)) & 0xff) as f32 * 0.017;
+    let sb = ((seed >> ((b % 8) * 5)) & 0xff) as f32 * 0.013;
+    let x = (a as f32 + 1.0) * 0.73 + sa;
+    let y = (b as f32 + 1.0) * 1.11 + sb;
+
+    ((t + x).sin() * 0.65 + (t * 0.618_034 + y).cos() * 0.35).clamp(-1.0, 1.0)
 }
 
 fn default_drag() -> f32 {
