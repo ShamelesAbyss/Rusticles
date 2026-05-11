@@ -314,12 +314,12 @@ impl World {
                 let counter = mutation_wave(self.seed ^ 0xA53A_9E37, self.tick, b, a);
                 let rule = &mut self.rules[a][b];
 
-                rule.attraction = (rule.attraction + wave * 0.035).clamp(-1.95, 2.05);
-                rule.orbit = (rule.orbit + counter * 0.025).clamp(-1.85, 1.85);
-                rule.resonance = (rule.resonance + wave * counter * 0.030).clamp(-1.75, 1.75);
+                rule.attraction = (rule.attraction + wave * 0.014).clamp(-1.95, 2.05);
+                rule.orbit = (rule.orbit + counter * 0.016).clamp(-1.85, 1.85);
+                rule.resonance = (rule.resonance + wave * counter * 0.014).clamp(-1.75, 1.75);
                 rule.pulse = (rule.pulse + wave.abs() * 0.010 - 0.004).clamp(0.20, 2.40);
                 rule.harmonic = (rule.harmonic + counter * 0.012).clamp(0.25, 3.25);
-                rule.radius = (rule.radius + wave * 0.080).clamp(4.0, 38.0);
+                rule.radius = (rule.radius + wave * 0.035).clamp(4.0, 38.0);
                 rule.repel_radius = (rule.repel_radius + counter * 0.018).clamp(1.0, 7.5);
                 rule.drag = (rule.drag + wave * 0.0008).clamp(0.935, 0.992);
             }
