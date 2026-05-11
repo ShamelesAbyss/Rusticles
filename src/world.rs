@@ -52,6 +52,22 @@ pub struct Rule {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HabitatField {
+    pub attract_strength: f32,
+    pub repel_strength: f32,
+    pub swirl_strength: f32,
+    pub pulse_speed: f32,
+    pub wave_x: f32,
+    pub wave_y: f32,
+    pub diagonal_wave: f32,
+    pub phase_a: f32,
+    pub phase_b: f32,
+    pub symmetry: f32,
+    pub turbulence: f32,
+    pub center_pull: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct World {
     pub seed: u64,
     pub tick: u64,
@@ -60,6 +76,8 @@ pub struct World {
     pub cells: Vec<Cell>,
     pub particles: Vec<Particle>,
     pub rules: Vec<Vec<Rule>>,
+    #[serde(default = "default_habitat")]
+    pub habitat: HabitatField,
 }
 
 impl World {
@@ -73,6 +91,8 @@ impl World {
         let height = height.max(12);
 
         let mut rng = StdRng::seed_from_u64(seed);
+        let habitat = HabitatField::random(&mut rng);
+
         let mut cells = vec![Cell::Dead; width * height];
 
         for cell in cells.iter_mut() {
@@ -162,6 +182,7 @@ impl World {
             cells,
             particles,
             rules,
+            habitat,
         }
     }
 
@@ -336,6 +357,19 @@ impl World {
             ax += pulse.0;
             ay += pulse.1;
 
+            let habitat = habitat_force(
+                current.x,
+                current.y,
+                self.width,
+                self.height,
+                self.seed,
+                self.tick,
+                current.kind,
+                &self.habitat,
+            );
+            ax += habitat.0;
+            ay += habitat.1;
+
             apply_wall_pressure(current.x, current.y, max_x, max_y, &mut ax, &mut ay);
 
             let cx = current.x.round().clamp(0.0, max_x) as usize;
@@ -442,6 +476,25 @@ impl World {
     }
 }
 
+impl HabitatField {
+    fn random(rng: &mut StdRng) -> Self {
+        Self {
+            attract_strength: rng.gen_range(-0.020..0.035),
+            repel_strength: rng.gen_range(-0.018..0.026),
+            swirl_strength: rng.gen_range(-0.030..0.030),
+            pulse_speed: rng.gen_range(0.012..0.075),
+            wave_x: rng.gen_range(0.035..0.160),
+            wave_y: rng.gen_range(0.035..0.160),
+            diagonal_wave: rng.gen_range(0.020..0.120),
+            phase_a: rng.gen_range(0.0..std::f32::consts::TAU),
+            phase_b: rng.gen_range(0.0..std::f32::consts::TAU),
+            symmetry: rng.gen_range(3.0f32..14.0f32).round(),
+            turbulence: rng.gen_range(0.002..0.022),
+            center_pull: rng.gen_range(-0.010..0.026),
+        }
+    }
+}
+
 struct SpatialBuckets {
     buckets: Vec<Vec<usize>>,
     cols: usize,
@@ -520,6 +573,15 @@ fn build_pressure_map(particles: &[Particle], width: usize, height: usize) -> Ve
     map
 }
 
+fn default_drag() -> f32 {
+    0.965
+}
+
+fn default_habitat() -> HabitatField {
+    let mut rng = StdRng::seed_from_u64(0xA8A8_4040_1313_7777);
+    HabitatField::random(&mut rng)
+}
+
 fn mutation_wave(seed: u64, tick: u64, a: usize, b: usize) -> f32 {
     let t = tick as f32 * 0.004;
     let sa = ((seed >> ((a % 8) * 7)) & 0xff) as f32 * 0.017;
@@ -530,8 +592,54 @@ fn mutation_wave(seed: u64, tick: u64, a: usize, b: usize) -> f32 {
     ((t + x).sin() * 0.65 + (t * 0.618_034 + y).cos() * 0.35).clamp(-1.0, 1.0)
 }
 
-fn default_drag() -> f32 {
-    0.965
+fn habitat_force(
+    x: f32,
+    y: f32,
+    width: usize,
+    height: usize,
+    seed: u64,
+    tick: u64,
+    kind: usize,
+    habitat: &HabitatField,
+) -> (f32, f32) {
+    let time = tick as f32 * habitat.pulse_speed;
+    let k = kind as f32 + 1.0;
+    let cx = width as f32 * 0.5;
+    let cy = height as f32 * 0.5;
+
+    let nx = (x - cx) / cx.max(1.0);
+    let ny = (y - cy) / cy.max(1.0);
+    let angle = ny.atan2(nx);
+    let radius = (nx * nx + ny * ny).sqrt();
+
+    let wave_a = (x * habitat.wave_x + time + habitat.phase_a + k * 0.31).sin();
+    let wave_b = (y * habitat.wave_y - time * PHI + habitat.phase_b + k * 0.17).cos();
+    let wave_c = ((x + y) * habitat.diagonal_wave + time * 0.77).sin();
+    let symmetry_gate = (angle * habitat.symmetry + time * 0.23).cos();
+
+    let terrain = wave_a + wave_b + wave_c * symmetry_gate;
+
+    let dx =
+        (wave_a.cos() * habitat.wave_x) + (wave_c.cos() * habitat.diagonal_wave * symmetry_gate);
+    let dy =
+        (-wave_b.sin() * habitat.wave_y) + (wave_c.cos() * habitat.diagonal_wave * symmetry_gate);
+
+    let mut ax = dx * habitat.attract_strength * terrain;
+    let mut ay = dy * habitat.attract_strength * terrain;
+
+    ax += -dx * habitat.repel_strength * (1.0 - terrain.abs()).max(0.0);
+    ay += -dy * habitat.repel_strength * (1.0 - terrain.abs()).max(0.0);
+
+    ax += -ny * habitat.swirl_strength * symmetry_gate;
+    ay += nx * habitat.swirl_strength * symmetry_gate;
+
+    ax += -nx * habitat.center_pull * radius;
+    ay += -ny * habitat.center_pull * radius;
+
+    ax += rand_push(x, y, seed ^ 0x514D_7A1B, tick + kind as u64) * habitat.turbulence;
+    ay += rand_push(y, x, seed ^ 0xBEEF_91C7, tick + kind as u64) * habitat.turbulence;
+
+    (ax, ay)
 }
 
 fn resonance_force(dist: f32, angle: f32, tick: u64, rule: &Rule) -> f32 {
