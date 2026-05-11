@@ -9,6 +9,7 @@ const PARTICLE_COUNT_MAX: usize = 1500;
 const WALL_MARGIN: f32 = 5.0;
 const WALL_PUSH: f32 = 0.075;
 const WALL_BOUNCE: f32 = 0.86;
+const PHI: f32 = 1.618_034;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Cell {
@@ -36,6 +37,10 @@ pub struct Rule {
     pub orbit: f32,
     pub density: f32,
     pub drag: f32,
+    pub resonance: f32,
+    pub harmonic: f32,
+    pub symmetry: f32,
+    pub pulse: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,6 +113,10 @@ impl World {
                     orbit: 0.0,
                     density: 0.0,
                     drag: 0.96,
+                    resonance: 0.0,
+                    harmonic: 0.0,
+                    symmetry: 0.0,
+                    pulse: 0.0,
                 };
                 PARTICLE_KINDS
             ];
@@ -124,11 +133,15 @@ impl World {
 
                 rules[a][b] = Rule {
                     attraction: rng.gen_range(-1.45..1.65) + self_bias,
-                    radius: rng.gen_range(5.0..32.0),
+                    radius: rng.gen_range(5.0..34.0),
                     repel_radius: rng.gen_range(1.2..6.5),
-                    orbit: rng.gen_range(-1.25..1.25),
-                    density: rng.gen_range(-0.85..1.20),
+                    orbit: rng.gen_range(-1.45..1.45),
+                    density: rng.gen_range(-0.95..1.35),
                     drag: rng.gen_range(0.945..0.988),
+                    resonance: rng.gen_range(-1.25..1.25),
+                    harmonic: rng.gen_range(0.35..2.75),
+                    symmetry: rng.gen_range(3.0f32..12.0f32).round(),
+                    pulse: rng.gen_range(0.35..1.85),
                 };
             }
         }
@@ -238,25 +251,30 @@ impl World {
 
                 let nx = dx / dist;
                 let ny = dy / dist;
+                let angle = dy.atan2(dx);
 
-                let radial_force = if dist < rule.repel_radius {
+                let base_force = if dist < rule.repel_radius {
                     let pressure = 1.0 - dist / rule.repel_radius;
-                    -2.15 * pressure
+                    -2.20 * pressure
                 } else {
                     let t = (dist - rule.repel_radius) / (rule.radius - rule.repel_radius);
                     let bell = 1.0 - (2.0 * t - 1.0).abs();
                     rule.attraction * bell
                 };
 
+                let resonance = resonance_force(dist, angle, self.tick, rule);
+                let radial_force = base_force + resonance;
+
                 let tangent_x = -ny;
                 let tangent_y = nx;
                 let orbit_force = rule.orbit * (1.0 - dist / rule.radius).max(0.0);
+                let angular_gate = (angle * rule.symmetry).cos();
 
                 ax += nx * radial_force * 0.018;
                 ay += ny * radial_force * 0.018;
 
-                ax += tangent_x * orbit_force * 0.011;
-                ay += tangent_y * orbit_force * 0.011;
+                ax += tangent_x * orbit_force * angular_gate * 0.014;
+                ay += tangent_y * orbit_force * angular_gate * 0.014;
             }
 
             let density_f = local_density as f32;
@@ -304,8 +322,8 @@ impl World {
                 0.965
             };
 
-            let mut vx = (current.vx + ax).clamp(-1.05, 1.05) * drag;
-            let mut vy = (current.vy + ay).clamp(-1.05, 1.05) * drag;
+            let mut vx = (current.vx + ax).clamp(-1.08, 1.08) * drag;
+            let mut vy = (current.vy + ay).clamp(-1.08, 1.08) * drag;
 
             let mut x = current.x + vx;
             let mut y = current.y + vy;
@@ -380,6 +398,18 @@ impl World {
             })
             .count()
     }
+}
+
+fn resonance_force(dist: f32, angle: f32, tick: u64, rule: &Rule) -> f32 {
+    let time = tick as f32 * 0.028 * rule.pulse;
+    let decay = (1.0 - dist / rule.radius).max(0.0);
+    let golden = (dist * 0.37 * PHI * rule.harmonic + time).sin();
+    let prime = (dist * 0.23 * 3.0 + time * 1.17).sin()
+        + (dist * 0.17 * 5.0 - time * 0.83).sin() * 0.5
+        + (dist * 0.11 * 7.0 + time * 0.41).sin() * 0.25;
+    let angular = (angle * rule.symmetry + time * 0.35).cos();
+
+    (golden + prime) * angular * decay * rule.resonance
 }
 
 fn apply_wall_pressure(x: f32, y: f32, max_x: f32, max_y: f32, ax: &mut f32, ay: &mut f32) {
