@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 const PARTICLE_KINDS: usize = 8;
-const PARTICLE_COUNT_MIN: usize = 900;
-const PARTICLE_COUNT_MAX: usize = 1800;
+const PARTICLE_COUNT_MIN: usize = 1400;
+const PARTICLE_COUNT_MAX: usize = 3000;
 
 const WALL_MARGIN: f32 = 5.0;
 const WALL_PUSH: f32 = 0.075;
