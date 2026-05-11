@@ -479,8 +479,8 @@ impl World {
             }
 
             if pressure >= 8 {
-                ax += rand_push(current.x, current.y, self.seed, self.tick) * 0.018;
-                ay += rand_push(current.y, current.x, self.seed ^ 0xA53A, self.tick) * 0.018;
+                ax += rand_push(current.x, current.y, self.seed, self.tick) * 0.000;
+                ay += rand_push(current.y, current.x, self.seed ^ 0xA53A, self.tick) * 0.000;
             }
 
             // Pressure-orbit well: dense local cores become mild gravity wells with orbital swirl.
