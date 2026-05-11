@@ -172,7 +172,7 @@ impl World {
         for a in 0..PARTICLE_KINDS {
             for b in 0..PARTICLE_KINDS {
                 let self_bias = if a == b {
-                    rng.gen_range(-0.15..0.55)
+                    rng.gen_range(-0.25..0.25)
                 } else {
                     0.0
                 };
