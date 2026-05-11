@@ -439,8 +439,8 @@ impl World {
                 let away_y = current.y - center_y;
                 let len = (away_x * away_x + away_y * away_y).sqrt().max(0.001);
 
-                ax += away_x / len * pressure * 0.018;
-                ay += away_y / len * pressure * 0.018;
+                ax += away_x / len * pressure * 0.000;
+                ay += away_y / len * pressure * 0.000;
             }
 
             let pulse = entropy_pulse(current.x, current.y, self.seed, self.tick, current.kind);
