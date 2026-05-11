@@ -2,11 +2,13 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
-const WIDTH: usize = 120;
-const HEIGHT: usize = 42;
 const PARTICLE_KINDS: usize = 4;
 const PARTICLE_COUNT_MIN: usize = 500;
 const PARTICLE_COUNT_MAX: usize = 1500;
+
+const WALL_MARGIN: f32 = 4.0;
+const WALL_PUSH: f32 = 0.055;
+const WALL_BOUNCE: f32 = 0.82;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Cell {
@@ -45,14 +47,17 @@ pub struct World {
 }
 
 impl World {
-    pub fn new_random() -> Self {
+    pub fn new_random(width: usize, height: usize) -> Self {
         let seed = rand::thread_rng().gen::<u64>();
-        Self::from_seed(seed)
+        Self::from_seed(seed, width, height)
     }
 
-    pub fn from_seed(seed: u64) -> Self {
+    pub fn from_seed(seed: u64, width: usize, height: usize) -> Self {
+        let width = width.max(40);
+        let height = height.max(12);
+
         let mut rng = StdRng::seed_from_u64(seed);
-        let mut cells = vec![Cell::Dead; WIDTH * HEIGHT];
+        let mut cells = vec![Cell::Dead; width * height];
 
         for cell in cells.iter_mut() {
             if rng.gen::<f32>() < 0.015 {
@@ -85,8 +90,8 @@ impl World {
             }
 
             particles.push(Particle {
-                x: rng.gen_range(1.0..(WIDTH - 1) as f32),
-                y: rng.gen_range(1.0..(HEIGHT - 1) as f32),
+                x: rng.gen_range(WALL_MARGIN..(width as f32 - WALL_MARGIN)),
+                y: rng.gen_range(WALL_MARGIN..(height as f32 - WALL_MARGIN)),
                 vx: rng.gen_range(-0.18..0.18),
                 vy: rng.gen_range(-0.18..0.18),
                 kind,
@@ -121,11 +126,52 @@ impl World {
         Self {
             seed,
             tick: 0,
-            width: WIDTH,
-            height: HEIGHT,
+            width,
+            height,
             cells,
             particles,
             rules,
+        }
+    }
+
+    pub fn resize_to(&mut self, new_width: usize, new_height: usize) {
+        let new_width = new_width.max(40);
+        let new_height = new_height.max(12);
+
+        if self.width == new_width && self.height == new_height {
+            return;
+        }
+
+        let old_width = self.width;
+        let old_height = self.height;
+        let old_cells = self.cells.clone();
+
+        let mut new_cells = vec![Cell::Dead; new_width * new_height];
+
+        for y in 0..old_height.min(new_height) {
+            for x in 0..old_width.min(new_width) {
+                new_cells[y * new_width + x] = old_cells[y * old_width + x];
+            }
+        }
+
+        self.width = new_width;
+        self.height = new_height;
+        self.cells = new_cells;
+
+        let max_x = (self.width - 1) as f32;
+        let max_y = (self.height - 1) as f32;
+
+        for p in self.particles.iter_mut() {
+            p.x = p.x.clamp(0.0, max_x);
+            p.y = p.y.clamp(0.0, max_y);
+
+            if p.x <= 0.0 || p.x >= max_x {
+                p.vx *= -WALL_BOUNCE;
+            }
+
+            if p.y <= 0.0 || p.y >= max_y {
+                p.vy *= -WALL_BOUNCE;
+            }
         }
     }
 
@@ -146,13 +192,6 @@ impl World {
         self.particles.iter().filter(|p| p.kind == kind).count()
     }
 
-    pub fn live_cell_count(&self) -> usize {
-        self.cells
-            .iter()
-            .filter(|cell| matches!(cell, Cell::Alive | Cell::Born))
-            .count()
-    }
-
     pub fn cell_at(&self, x: usize, y: usize) -> Cell {
         if x >= self.width || y >= self.height {
             return Cell::Dead;
@@ -163,6 +202,8 @@ impl World {
 
     fn step_particles(&mut self) {
         let snapshot = self.particles.clone();
+        let max_x = (self.width - 1) as f32;
+        let max_y = (self.height - 1) as f32;
 
         for i in 0..self.particles.len() {
             let current = &snapshot[i];
@@ -200,8 +241,10 @@ impl World {
                 ay += ny * force * 0.018;
             }
 
-            let cx = current.x.round().clamp(0.0, (self.width - 1) as f32) as usize;
-            let cy = current.y.round().clamp(0.0, (self.height - 1) as f32) as usize;
+            apply_wall_pressure(current.x, current.y, max_x, max_y, &mut ax, &mut ay);
+
+            let cx = current.x.round().clamp(0.0, max_x) as usize;
+            let cy = current.y.round().clamp(0.0, max_y) as usize;
             let pressure = self.local_particle_pressure(cx, cy);
 
             match self.cell_at(cx, cy) {
@@ -227,8 +270,8 @@ impl World {
             let mut x = current.x + vx;
             let mut y = current.y + vy;
 
-            bounce_axis(&mut x, &mut vx, 0.0, (self.width - 1) as f32);
-            bounce_axis(&mut y, &mut vy, 0.0, (self.height - 1) as f32);
+            bounce_axis(&mut x, &mut vx, 0.0, max_x);
+            bounce_axis(&mut y, &mut vy, 0.0, max_y);
 
             self.particles[i].x = x;
             self.particles[i].y = y;
@@ -299,6 +342,24 @@ impl World {
     }
 }
 
+fn apply_wall_pressure(x: f32, y: f32, max_x: f32, max_y: f32, ax: &mut f32, ay: &mut f32) {
+    if x < WALL_MARGIN {
+        *ax += (WALL_MARGIN - x) * WALL_PUSH;
+    }
+
+    if x > max_x - WALL_MARGIN {
+        *ax -= (x - (max_x - WALL_MARGIN)) * WALL_PUSH;
+    }
+
+    if y < WALL_MARGIN {
+        *ay += (WALL_MARGIN - y) * WALL_PUSH;
+    }
+
+    if y > max_y - WALL_MARGIN {
+        *ay -= (y - (max_y - WALL_MARGIN)) * WALL_PUSH;
+    }
+}
+
 fn live_neighbors(cells: &[Cell], width: usize, height: usize, x: usize, y: usize) -> usize {
     let mut count = 0;
 
@@ -328,12 +389,12 @@ fn live_neighbors(cells: &[Cell], width: usize, height: usize, x: usize, y: usiz
 }
 
 fn bounce_axis(pos: &mut f32, vel: &mut f32, min: f32, max: f32) {
-    if *pos < min {
-        *pos = min + (min - *pos);
-        *vel = vel.abs() * 0.92;
-    } else if *pos > max {
-        *pos = max - (*pos - max);
-        *vel = -vel.abs() * 0.92;
+    if *pos <= min {
+        *pos = min;
+        *vel = vel.abs() * WALL_BOUNCE;
+    } else if *pos >= max {
+        *pos = max;
+        *vel = -vel.abs() * WALL_BOUNCE;
     }
 
     *pos = pos.clamp(min, max);

@@ -3,7 +3,10 @@ mod terminal;
 mod world;
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::{
+    event::{self, Event, KeyCode},
+    terminal as cterm,
+};
 use std::time::{Duration, Instant};
 use terminal::Terminal;
 use world::World;
@@ -11,17 +14,25 @@ use world::World;
 const SAVE_PATH: &str = "saves/rusticles_memory.json";
 
 fn main() -> Result<()> {
+    let (world_w, world_h) = viewport_size();
+
     let mut terminal = Terminal::enter()?;
-    let mut world = memory::load(SAVE_PATH)?.unwrap_or_else(World::new_random);
+    let mut world = memory::load(SAVE_PATH)?.unwrap_or_else(|| World::new_random(world_w, world_h));
+    world.resize_to(world_w, world_h);
 
     let mut paused = false;
     let mut tick_delay = Duration::from_millis(45);
-    let render_delay = Duration::from_millis(66);
+    let render_delay = Duration::from_millis(100);
 
     let mut last_tick = Instant::now();
     let mut last_render = Instant::now() - render_delay;
 
     loop {
+        let (new_w, new_h) = viewport_size();
+        if world.width != new_w || world.height != new_h {
+            world.resize_to(new_w, new_h);
+        }
+
         while event::poll(Duration::from_millis(2))? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
@@ -34,11 +45,13 @@ fn main() -> Result<()> {
                     }
                     KeyCode::Char('n') => {
                         memory::wipe(SAVE_PATH)?;
-                        world = World::new_random();
+                        let (w, h) = viewport_size();
+                        world = World::new_random(w, h);
                         memory::save(SAVE_PATH, &world)?;
                     }
                     KeyCode::Char('r') => {
-                        world = World::new_random();
+                        let (w, h) = viewport_size();
+                        world = World::new_random(w, h);
                     }
                     KeyCode::Char(' ') => {
                         paused = !paused;
@@ -72,4 +85,13 @@ fn main() -> Result<()> {
 
         std::thread::sleep(Duration::from_millis(3));
     }
+}
+
+fn viewport_size() -> (usize, usize) {
+    let (tw, th) = cterm::size().unwrap_or((120, 42));
+
+    let width = tw.saturating_sub(2).max(40) as usize;
+    let height = th.saturating_sub(6).max(12) as usize;
+
+    (width, height)
 }

@@ -19,6 +19,12 @@ pub struct Terminal {
     inner: RatTerminal<CrosstermBackend<Stdout>>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct CellStack {
+    total: usize,
+    kinds: [usize; 4],
+}
+
 impl Terminal {
     pub fn enter() -> Result<Self> {
         terminal::enable_raw_mode()?;
@@ -33,7 +39,7 @@ impl Terminal {
         Ok(Self { inner })
     }
 
-    pub fn draw(&mut self, world: &World, paused: bool, tick_delay: Duration) -> Result<()> {
+    pub fn draw(&mut self, world: &World, paused: bool, _tick_delay: Duration) -> Result<()> {
         self.inner.draw(|frame| {
             let area = frame.size();
 
@@ -51,19 +57,13 @@ impl Terminal {
             let draw_w = draw_w.min(world.width);
             let draw_h = draw_h.min(world.height);
 
-            let mut grid = vec![(' ', Color::Reset); draw_w.saturating_mul(draw_h)];
-
-            for y in 0..draw_h {
-                for x in 0..draw_w {
-                    let idx = y * draw_w + x;
-
-                    grid[idx] = match world.cell_at(x, y) {
-                        Cell::Alive if world.tick % 30 == 0 => ('.', Color::DarkGray),
-                        Cell::Born if world.tick % 36 == 0 => (',', Color::DarkGray),
-                        _ => (' ', Color::Reset),
-                    };
-                }
-            }
+            let mut stacks = vec![
+                CellStack {
+                    total: 0,
+                    kinds: [0; 4],
+                };
+                draw_w.saturating_mul(draw_h)
+            ];
 
             for p in world.particles.iter() {
                 let x = p.x.round() as isize;
@@ -81,14 +81,18 @@ impl Terminal {
                 }
 
                 let idx = y * draw_w + x;
+                let kind = p.kind.min(3);
 
-                grid[idx] = match p.kind {
-                    0 => ('.', Color::Yellow),
-                    1 => ('.', Color::Magenta),
-                    2 => ('.', Color::Blue),
-                    _ => ('.', Color::Red),
-                };
+                stacks[idx].total += 1;
+                stacks[idx].kinds[kind] += 1;
             }
+
+            let visible_cells = stacks.iter().filter(|stack| stack.total > 0).count();
+            let compressed_particles = world.particles.len().saturating_sub(visible_cells);
+            let mixed_cells = stacks
+                .iter()
+                .filter(|stack| stack.kinds.iter().filter(|count| **count > 0).count() >= 2)
+                .count();
 
             let mut lines = Vec::with_capacity(draw_h);
 
@@ -96,9 +100,43 @@ impl Terminal {
                 let mut spans = Vec::with_capacity(draw_w);
 
                 for x in 0..draw_w {
-                    let (glyph, color) = grid[y * draw_w + x];
+                    let idx = y * draw_w + x;
+                    let stack = stacks[idx];
 
-                    spans.push(Span::styled(glyph.to_string(), Style::default().fg(color)));
+                    if stack.total > 0 {
+                        let active_kinds = stack.kinds.iter().filter(|count| **count > 0).count();
+                        let dominant = dominant_kind(stack.kinds);
+
+                        let glyph = match stack.total {
+                            1 => "•",
+                            2..=3 => "●",
+                            4..=7 => "O",
+                            8..=15 => "@",
+                            _ => "#",
+                        };
+
+                        let color = if active_kinds >= 3 {
+                            Color::Rgb(255, 255, 255)
+                        } else if active_kinds == 2 {
+                            Color::Rgb(180, 255, 255)
+                        } else {
+                            species_color(dominant)
+                        };
+
+                        spans.push(Span::styled(glyph, Style::default().fg(color)));
+                    } else {
+                        let ghost = match world.cell_at(x, y) {
+                            Cell::Alive if world.tick % 40 == 0 => Some("."),
+                            Cell::Born if world.tick % 50 == 0 => Some(","),
+                            _ => None,
+                        };
+
+                        if let Some(glyph) = ghost {
+                            spans.push(Span::styled(glyph, Style::default().fg(Color::DarkGray)));
+                        } else {
+                            spans.push(Span::raw(" "));
+                        }
+                    }
                 }
 
                 lines.push(Line::from(spans));
@@ -114,7 +152,11 @@ impl Terminal {
 
             frame.render_widget(field, field_area);
 
-            let status_color = if paused { Color::Yellow } else { Color::Green };
+            let status_color = if paused {
+                Color::Rgb(255, 220, 40)
+            } else {
+                Color::Green
+            };
 
             let hud_lines = vec![
                 Line::from(vec![
@@ -126,36 +168,39 @@ impl Terminal {
                     Span::raw(" | particles "),
                     Span::styled(
                         world.particles.len().to_string(),
-                        Style::default().fg(Color::Yellow),
+                        Style::default().fg(Color::Rgb(255, 220, 40)),
                     ),
-                    Span::raw(" | cells "),
+                    Span::raw(" | visible "),
                     Span::styled(
-                        world.live_cell_count().to_string(),
-                        Style::default().fg(Color::Magenta),
+                        visible_cells.to_string(),
+                        Style::default().fg(Color::Rgb(40, 180, 255)),
+                    ),
+                    Span::raw(" | compressed "),
+                    Span::styled(
+                        compressed_particles.to_string(),
+                        Style::default().fg(Color::Rgb(255, 80, 255)),
+                    ),
+                    Span::raw(" | mixed "),
+                    Span::styled(
+                        mixed_cells.to_string(),
+                        Style::default().fg(Color::Rgb(180, 255, 255)),
                     ),
                     Span::raw(" | "),
                     Span::styled(
                         if paused { "PAUSED" } else { "ALIVE" },
                         Style::default().fg(status_color),
                     ),
-                    Span::raw(" | "),
-                    Span::styled(
-                        format!("{}ms", tick_delay.as_millis()),
-                        Style::default().fg(Color::Blue),
-                    ),
                 ]),
                 Line::from(vec![
-                    Span::styled(" amber ", Style::default().fg(Color::Yellow)),
+                    Span::styled(" amber ", Style::default().fg(Color::Rgb(255, 220, 40))),
                     Span::raw(world.kind_count(0).to_string()),
-                    Span::styled(" | violet ", Style::default().fg(Color::Magenta)),
+                    Span::styled(" | violet ", Style::default().fg(Color::Rgb(255, 80, 255))),
                     Span::raw(world.kind_count(1).to_string()),
-                    Span::styled(" | blue ", Style::default().fg(Color::Blue)),
+                    Span::styled(" | blue ", Style::default().fg(Color::Rgb(40, 180, 255))),
                     Span::raw(world.kind_count(2).to_string()),
-                    Span::styled(" | red ", Style::default().fg(Color::Red)),
+                    Span::styled(" | red ", Style::default().fg(Color::Rgb(255, 55, 55))),
                     Span::raw(world.kind_count(3).to_string()),
-                    Span::raw(
-                        " | q save+quit | s save | n new | r reroll | space pause | +/- speed",
-                    ),
+                    Span::raw(" | density: • ● O @ # | q save+quit | n new | space pause"),
                 ]),
             ];
 
@@ -179,5 +224,28 @@ impl Drop for Terminal {
         let _ = terminal::disable_raw_mode();
         let _ = execute!(self.inner.backend_mut(), cursor::Show, LeaveAlternateScreen);
         let _ = self.inner.show_cursor();
+    }
+}
+
+fn dominant_kind(kinds: [usize; 4]) -> usize {
+    let mut best_kind = 0;
+    let mut best_count = 0;
+
+    for (kind, count) in kinds.iter().enumerate() {
+        if *count > best_count {
+            best_kind = kind;
+            best_count = *count;
+        }
+    }
+
+    best_kind
+}
+
+fn species_color(kind: usize) -> Color {
+    match kind {
+        0 => Color::Rgb(255, 220, 40),
+        1 => Color::Rgb(255, 80, 255),
+        2 => Color::Rgb(40, 180, 255),
+        _ => Color::Rgb(255, 55, 55),
     }
 }
