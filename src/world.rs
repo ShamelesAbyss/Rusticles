@@ -12,6 +12,7 @@ const WALL_PUSH: f32 = 0.075;
 const WALL_BOUNCE: f32 = 0.86;
 const PHI: f32 = 1.618_034;
 const BUCKET_SIZE: f32 = 8.0;
+const MAX_NEIGHBOR_INTERACTIONS: usize = 64;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Cell {
@@ -357,6 +358,7 @@ impl World {
             let mut local_density = 0usize;
             let mut drag_accum = 0.0;
             let mut drag_count = 0.0;
+            let mut neighbor_interactions = 0usize;
 
             let search_radius = self.max_radius_for_kind(current.kind);
 
@@ -365,6 +367,10 @@ impl World {
                 current.y,
                 search_radius,
                 |other_index| {
+                    if neighbor_interactions >= MAX_NEIGHBOR_INTERACTIONS {
+                        return;
+                    }
+
                     if other_index == i {
                         return;
                     }
@@ -385,6 +391,7 @@ impl World {
                         return;
                     }
 
+                    neighbor_interactions += 1;
                     local_density += 1;
                     drag_accum += rule.drag;
                     drag_count += 1.0;
