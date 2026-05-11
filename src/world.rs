@@ -277,10 +277,6 @@ impl World {
         self.perf.step_ms = step_start.elapsed().as_secs_f32() * 1000.0;
     }
 
-    pub fn kind_count(&self, kind: usize) -> usize {
-        self.cached_kind_counts.get(kind).copied().unwrap_or(0)
-    }
-
     pub fn kind_counts(&self) -> [usize; PARTICLE_KINDS] {
         self.cached_kind_counts
     }
