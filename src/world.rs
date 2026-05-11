@@ -10,6 +10,7 @@ const WALL_MARGIN: f32 = 5.0;
 const WALL_PUSH: f32 = 0.075;
 const WALL_BOUNCE: f32 = 0.86;
 const PHI: f32 = 1.618_034;
+const BUCKET_SIZE: f32 = 8.0;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Cell {
@@ -34,12 +35,19 @@ pub struct Rule {
     pub attraction: f32,
     pub radius: f32,
     pub repel_radius: f32,
+    #[serde(default)]
     pub orbit: f32,
+    #[serde(default)]
     pub density: f32,
+    #[serde(default = "default_drag")]
     pub drag: f32,
+    #[serde(default)]
     pub resonance: f32,
+    #[serde(default)]
     pub harmonic: f32,
+    #[serde(default)]
     pub symmetry: f32,
+    #[serde(default)]
     pub pulse: f32,
 }
 
@@ -216,6 +224,9 @@ impl World {
 
     fn step_particles(&mut self) {
         let snapshot = self.particles.clone();
+        let pressure_map = build_pressure_map(&snapshot, self.width, self.height);
+        let buckets = SpatialBuckets::new(&snapshot, self.width, self.height);
+
         let max_x = (self.width - 1) as f32;
         let max_y = (self.height - 1) as f32;
         let center_x = max_x * 0.5;
@@ -229,7 +240,15 @@ impl World {
             let mut drag_accum = 0.0;
             let mut drag_count = 0.0;
 
-            for other in snapshot.iter() {
+            let search_radius = self.max_radius_for_kind(current.kind);
+            let nearby = buckets.nearby_indices(current.x, current.y, search_radius);
+
+            for other_index in nearby {
+                if other_index == i {
+                    continue;
+                }
+
+                let other = &snapshot[other_index];
                 let dx = other.x - current.x;
                 let dy = other.y - current.y;
                 let dist_sq = dx * dx + dy * dy;
@@ -297,7 +316,7 @@ impl World {
 
             let cx = current.x.round().clamp(0.0, max_x) as usize;
             let cy = current.y.round().clamp(0.0, max_y) as usize;
-            let pressure = self.local_particle_pressure(cx, cy);
+            let pressure = pressure_map[cy * self.width + cx] as usize;
 
             match self.cell_at(cx, cy) {
                 Cell::Alive | Cell::Born => {
@@ -339,15 +358,23 @@ impl World {
         }
     }
 
+    fn max_radius_for_kind(&self, kind: usize) -> f32 {
+        self.rules
+            .get(kind)
+            .map(|row| row.iter().map(|rule| rule.radius).fold(1.0, f32::max))
+            .unwrap_or(1.0)
+    }
+
     fn step_cells(&mut self) {
         let old = self.cells.clone();
+        let pressure_map = build_pressure_map(&self.particles, self.width, self.height);
         let mut next = vec![Cell::Dead; self.width * self.height];
 
         for y in 0..self.height {
             for x in 0..self.width {
                 let idx = y * self.width + x;
                 let neighbors = live_neighbors(&old, self.width, self.height, x, y);
-                let pressure = self.local_particle_pressure(x, y);
+                let pressure = pressure_map[idx] as usize;
 
                 next[idx] = match old[idx] {
                     Cell::Dead => {
@@ -376,28 +403,101 @@ impl World {
     }
 
     fn seed_cells_from_particles(&mut self) {
+        let pressure_map = build_pressure_map(&self.particles, self.width, self.height);
+
         for p in self.particles.iter() {
             let x = p.x.round().clamp(0.0, (self.width - 1) as f32) as usize;
             let y = p.y.round().clamp(0.0, (self.height - 1) as f32) as usize;
             let idx = y * self.width + x;
-            let pressure = self.local_particle_pressure(x, y);
+            let pressure = pressure_map[idx] as usize;
 
             if matches!(self.cells[idx], Cell::Dead) && pressure >= 5 {
                 self.cells[idx] = Cell::Born;
             }
         }
     }
+}
 
-    fn local_particle_pressure(&self, x: usize, y: usize) -> usize {
-        self.particles
-            .iter()
-            .filter(|p| {
-                let dx = (p.x - x as f32).abs();
-                let dy = (p.y - y as f32).abs();
-                dx <= 1.75 && dy <= 1.75
-            })
-            .count()
+struct SpatialBuckets {
+    buckets: Vec<Vec<usize>>,
+    cols: usize,
+    rows: usize,
+}
+
+impl SpatialBuckets {
+    fn new(particles: &[Particle], width: usize, height: usize) -> Self {
+        let cols = ((width as f32) / BUCKET_SIZE).ceil().max(1.0) as usize;
+        let rows = ((height as f32) / BUCKET_SIZE).ceil().max(1.0) as usize;
+        let mut buckets = vec![Vec::new(); cols * rows];
+
+        for (idx, p) in particles.iter().enumerate() {
+            let bx = ((p.x / BUCKET_SIZE).floor() as usize).min(cols - 1);
+            let by = ((p.y / BUCKET_SIZE).floor() as usize).min(rows - 1);
+            buckets[by * cols + bx].push(idx);
+        }
+
+        Self {
+            buckets,
+            cols,
+            rows,
+        }
     }
+
+    fn nearby_indices(&self, x: f32, y: f32, radius: f32) -> Vec<usize> {
+        let bx = ((x / BUCKET_SIZE).floor() as isize).clamp(0, (self.cols - 1) as isize);
+        let by = ((y / BUCKET_SIZE).floor() as isize).clamp(0, (self.rows - 1) as isize);
+        let range = (radius / BUCKET_SIZE).ceil() as isize + 1;
+
+        let mut out = Vec::new();
+
+        for oy in -range..=range {
+            for ox in -range..=range {
+                let nx = bx + ox;
+                let ny = by + oy;
+
+                if nx < 0 || ny < 0 || nx >= self.cols as isize || ny >= self.rows as isize {
+                    continue;
+                }
+
+                out.extend(
+                    self.buckets[ny as usize * self.cols + nx as usize]
+                        .iter()
+                        .copied(),
+                );
+            }
+        }
+
+        out
+    }
+}
+
+fn build_pressure_map(particles: &[Particle], width: usize, height: usize) -> Vec<u16> {
+    let mut map = vec![0u16; width * height];
+
+    for p in particles.iter() {
+        let cx = p.x.round() as isize;
+        let cy = p.y.round() as isize;
+
+        for oy in -2..=2 {
+            for ox in -2..=2 {
+                let x = cx + ox;
+                let y = cy + oy;
+
+                if x < 0 || y < 0 || x >= width as isize || y >= height as isize {
+                    continue;
+                }
+
+                let idx = y as usize * width + x as usize;
+                map[idx] = map[idx].saturating_add(1);
+            }
+        }
+    }
+
+    map
+}
+
+fn default_drag() -> f32 {
+    0.965
 }
 
 fn resonance_force(dist: f32, angle: f32, tick: u64, rule: &Rule) -> f32 {
