@@ -416,7 +416,7 @@ impl World {
                     let radial_force = base_force + resonance;
                     let density_shape = rule.density.clamp(-0.95, 0.35)
                         * (1.0 - dist / rule.radius).max(0.0)
-                        * 0.002;
+                        * 0.000;
 
                     let tangent_x = -ny;
                     let tangent_y = nx;
