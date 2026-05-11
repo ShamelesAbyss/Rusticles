@@ -126,8 +126,8 @@ impl Terminal {
                         spans.push(Span::styled(glyph, Style::default().fg(color)));
                     } else {
                         let ghost = match world.cell_at(x, y) {
-                            Cell::Alive if world.tick % 40 == 0 => Some("."),
-                            Cell::Born if world.tick % 50 == 0 => Some(","),
+                            Cell::Alive if false => Some("."),
+                            Cell::Born if false => Some(","),
                             _ => None,
                         };
 

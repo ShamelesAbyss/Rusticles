@@ -67,12 +67,9 @@ impl World {
 
         let total = rng.gen_range(PARTICLE_COUNT_MIN..=PARTICLE_COUNT_MAX);
 
-        let weights = [
-            rng.gen_range(0.18..0.48),
-            rng.gen_range(0.18..0.48),
-            rng.gen_range(0.18..0.48),
-            rng.gen_range(0.18..0.48),
-        ];
+        let weights: Vec<f32> = (0..PARTICLE_KINDS)
+            .map(|_| rng.gen_range(0.18..0.48))
+            .collect();
         let weight_sum: f32 = weights.iter().sum();
 
         let mut particles = Vec::with_capacity(total);
