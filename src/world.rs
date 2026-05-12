@@ -116,7 +116,7 @@ impl World {
 
         let mut cells = vec![Cell::Dead; width * height];
         for cell in cells.iter_mut() {
-            if rng.gen::<f32>() < 0.012 {
+            if false && rng.gen::<f32>() < 0.012 {
                 *cell = Cell::Alive;
             }
         }
