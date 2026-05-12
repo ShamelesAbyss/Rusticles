@@ -476,8 +476,8 @@ impl World {
                 current.kind,
                 &self.habitat,
             );
-            ax += habitat.0 * 0.15;
-            ay += habitat.1 * 0.15;
+            ax += habitat.0 * 0.0;
+            ay += habitat.1 * 0.0;
 
             apply_wall_pressure(current.x, current.y, max_x, max_y, &mut ax, &mut ay);
 
