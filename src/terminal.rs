@@ -158,7 +158,7 @@ impl Terminal {
 
             let counts = world.kind_counts();
             let active_species = counts.iter().filter(|count| **count > 0).count();
-            let (_dead_cells, born_cells, alive_cells, _dying_cells) = world.cell_counts();
+            let (_dead_cells, born_cells, alive_cells, dying_cells) = world.cell_counts();
             let perf = world.perf();
 
             let hud_lines = vec![
@@ -176,11 +176,6 @@ impl Terminal {
                     Span::raw(" | species "),
                     Span::styled(active_species.to_string(), Style::default().fg(Color::Cyan)),
                     Span::raw(" | visible "),
-                    Span::raw(" | cells "),
-                    Span::styled(
-                        (alive_cells + born_cells).to_string(),
-                        Style::default().fg(Color::Green),
-                    ),
                     Span::styled(
                         visible_cells.to_string(),
                         Style::default().fg(Color::Rgb(40, 180, 255)),
@@ -194,6 +189,11 @@ impl Terminal {
                     Span::styled(
                         mixed_cells.to_string(),
                         Style::default().fg(Color::Rgb(180, 255, 255)),
+                    ),
+                    Span::raw(" | cells b/a/d "),
+                    Span::styled(
+                        format!("{}/{}/{}", born_cells, alive_cells, dying_cells),
+                        Style::default().fg(Color::Green),
                     ),
                     Span::raw(" | "),
                     Span::styled(
