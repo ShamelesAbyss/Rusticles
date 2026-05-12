@@ -503,7 +503,7 @@ impl World {
             }
 
             // Pressure-orbit well: dense local cores become mild gravity wells with orbital swirl.
-            if pressure >= 14 {
+            if pressure >= 24 {
                 let core = ((pressure as f32 - 13.0) / 32.0).min(1.0);
 
                 let left = if cx > 0 {
