@@ -442,12 +442,12 @@ impl World {
                     let orbit_force = rule.orbit * (1.0 - dist / rule.radius).max(0.0);
                     let angular_gate = (angle * rule.symmetry).cos();
 
-                    ax += nx * radial_force * 0.018;
+                    ax += nx * radial_force * 0.015;
                     ax += nx * density_shape;
                     ay += ny * density_shape;
-                    ay += ny * radial_force * 0.018;
-                    ax += tangent_x * orbit_force * angular_gate * 0.014;
-                    ay += tangent_y * orbit_force * angular_gate * 0.014;
+                    ay += ny * radial_force * 0.015;
+                    ax += tangent_x * orbit_force * angular_gate * 0.007;
+                    ay += tangent_y * orbit_force * angular_gate * 0.007;
                 },
             );
 
