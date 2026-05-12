@@ -613,7 +613,7 @@ impl World {
 
                 self.runtime.next_cells[idx] = match self.runtime.old_cells[idx] {
                     Cell::Dead => {
-                        if neighbors == 3 && pressure >= 2 {
+                        if neighbors == 3 && pressure >= 3 {
                             Cell::Born
                         } else if pressure >= 12 {
                             Cell::Born
@@ -623,7 +623,7 @@ impl World {
                     }
                     Cell::Born => Cell::Alive,
                     Cell::Alive => {
-                        if neighbors == 2 || neighbors == 3 || pressure >= 7 {
+                        if neighbors == 2 || neighbors == 3 || pressure >= 9 {
                             Cell::Alive
                         } else {
                             Cell::Dying
