@@ -446,8 +446,8 @@ impl World {
                     ax += nx * density_shape;
                     ay += ny * density_shape;
                     ay += ny * radial_force * 0.015;
-                    ax += tangent_x * orbit_force * angular_gate * 0.007;
-                    ay += tangent_y * orbit_force * angular_gate * 0.007;
+                    ax += tangent_x * orbit_force * angular_gate * 0.000;
+                    ay += tangent_y * orbit_force * angular_gate * 0.000;
                 },
             );
 
