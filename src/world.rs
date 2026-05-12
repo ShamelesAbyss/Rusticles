@@ -294,6 +294,24 @@ impl World {
         self.cached_kind_counts
     }
 
+    pub fn cell_counts(&self) -> (usize, usize, usize, usize) {
+        let mut dead = 0usize;
+        let mut born = 0usize;
+        let mut alive = 0usize;
+        let mut dying = 0usize;
+
+        for cell in self.cells.iter() {
+            match cell {
+                Cell::Dead => dead += 1,
+                Cell::Born => born += 1,
+                Cell::Alive => alive += 1,
+                Cell::Dying => dying += 1,
+            }
+        }
+
+        (dead, born, alive, dying)
+    }
+
     pub fn perf(&self) -> PerfStats {
         self.perf
     }
