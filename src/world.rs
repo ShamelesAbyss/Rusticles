@@ -609,27 +609,13 @@ impl World {
                 let idx = y * self.width + x;
                 let neighbors =
                     live_neighbors(&self.runtime.old_cells, self.width, self.height, x, y);
-                let pressure = self.runtime.pressure_map[idx] as usize;
 
-                self.runtime.next_cells[idx] = match self.runtime.old_cells[idx] {
-                    Cell::Dead => {
-                        if neighbors == 3 && pressure >= 3 {
-                            Cell::Born
-                        } else if pressure >= 12 {
-                            Cell::Born
-                        } else {
-                            Cell::Dead
-                        }
-                    }
-                    Cell::Born => Cell::Alive,
-                    Cell::Alive => {
-                        if neighbors == 2 || neighbors == 3 || pressure >= 9 {
-                            Cell::Alive
-                        } else {
-                            Cell::Dying
-                        }
-                    }
-                    Cell::Dying => Cell::Dead,
+                let is_alive = matches!(self.runtime.old_cells[idx], Cell::Alive | Cell::Born);
+                self.runtime.next_cells[idx] = match (is_alive, neighbors) {
+                    (true, 2) | (true, 3) => Cell::Alive,
+                    (true, _) => Cell::Dying,
+                    (false, 3) => Cell::Born,
+                    (false, _) => Cell::Dead,
                 };
             }
         }
