@@ -147,8 +147,14 @@ impl World {
             }
 
             particles.push(Particle {
-                x: rng.gen_range(WALL_MARGIN..(width as f32 - WALL_MARGIN)),
-                y: rng.gen_range(WALL_MARGIN..(height as f32 - WALL_MARGIN)),
+                x: rng.gen_range(
+                    WALL_MARGIN.min(width as f32 * 0.25)
+                        ..(width as f32 - WALL_MARGIN).max(width as f32 * 0.75),
+                ),
+                y: rng.gen_range(
+                    WALL_MARGIN.min(height as f32 * 0.25)
+                        ..(height as f32 - WALL_MARGIN).max(height as f32 * 0.75),
+                ),
                 vx: rng.gen_range(-0.22..0.22),
                 vy: rng.gen_range(-0.22..0.22),
                 kind,
