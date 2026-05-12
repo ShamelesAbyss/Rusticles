@@ -938,7 +938,13 @@ fn conway_escape_vector(
     if len > 0.001 {
         (ax / len, ay / len)
     } else {
-        (0.0, -0.35)
+        let wiggle = rand_push(
+            x as f32,
+            y as f32,
+            0xC0A7_5EED,
+            (x as u64) ^ ((y as u64) << 16),
+        );
+        (wiggle, 0.0)
     }
 }
 
