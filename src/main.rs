@@ -21,7 +21,7 @@ fn main() -> Result<()> {
     world.resize_to(world_w, world_h);
 
     let mut paused = false;
-    let mut tick_delay = Duration::from_millis(16);
+    let mut tick_delay = Duration::from_millis(50);
     let render_delay = Duration::from_millis(33);
 
     let mut last_tick = Instant::now();
