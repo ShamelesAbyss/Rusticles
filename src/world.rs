@@ -506,10 +506,10 @@ impl World {
             match self.cell_at(cx, cy) {
                 Cell::Alive | Cell::Born => {
                     let away = conway_escape_vector(&self.cells, self.width, self.height, cx, cy);
-                    ax += away.0 * 0.026;
-                    ay += away.1 * 0.026;
-                    ax *= 0.98;
-                    ay *= 0.98;
+                    ax += away.0 * 0.075;
+                    ay += away.1 * 0.075;
+                    ax *= 1.00;
+                    ay *= 1.00;
                 }
                 Cell::Dying => {
                     ax -= current.vx * 0.035;
