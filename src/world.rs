@@ -410,7 +410,7 @@ impl World {
                         let t = (dist - rule.repel_radius) / denom;
                         let bell = 1.0 - (2.0 * t - 1.0).abs();
                         if rule.attraction > 0.0 {
-                            let density_limit = 10.0;
+                            let density_limit = 8.0 + rule.density.abs() * 5.0;
                             let density_factor =
                                 1.0 - ((local_density as f32 - density_limit).max(0.0)).min(1.005);
                             rule.attraction * density_factor * bell
