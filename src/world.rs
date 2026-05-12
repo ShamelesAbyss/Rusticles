@@ -505,12 +505,15 @@ impl World {
 
             match self.cell_at(cx, cy) {
                 Cell::Alive | Cell::Born => {
-                    ax *= 0.96;
-                    ay *= 0.96;
+                    let away = conway_escape_vector(&self.cells, self.width, self.height, cx, cy);
+                    ax += away.0 * 0.026;
+                    ay += away.1 * 0.026;
+                    ax *= 0.98;
+                    ay *= 0.98;
                 }
                 Cell::Dying => {
-                    ax -= current.vx * 0.065;
-                    ay -= current.vy * 0.065;
+                    ax -= current.vx * 0.035;
+                    ay -= current.vy * 0.035;
                 }
                 Cell::Dead => {}
             }
@@ -897,6 +900,45 @@ fn apply_wall_pressure(x: f32, y: f32, max_x: f32, max_y: f32, ax: &mut f32, ay:
 
     if y > max_y - WALL_MARGIN {
         *ay -= (y - (max_y - WALL_MARGIN)) * WALL_PUSH;
+    }
+}
+
+fn conway_escape_vector(
+    cells: &[Cell],
+    width: usize,
+    height: usize,
+    x: usize,
+    y: usize,
+) -> (f32, f32) {
+    let mut ax = 0.0f32;
+    let mut ay = 0.0f32;
+
+    for oy in -1isize..=1 {
+        for ox in -1isize..=1 {
+            if ox == 0 && oy == 0 {
+                continue;
+            }
+
+            let nx = x as isize + ox;
+            let ny = y as isize + oy;
+
+            if nx < 0 || ny < 0 || nx >= width as isize || ny >= height as isize {
+                continue;
+            }
+
+            let idx = ny as usize * width + nx as usize;
+            if matches!(cells[idx], Cell::Alive | Cell::Born) {
+                ax -= ox as f32;
+                ay -= oy as f32;
+            }
+        }
+    }
+
+    let len = (ax * ax + ay * ay).sqrt();
+    if len > 0.001 {
+        (ax / len, ay / len)
+    } else {
+        (0.0, -0.35)
     }
 }
 
