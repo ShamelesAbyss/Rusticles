@@ -409,7 +409,14 @@ impl World {
                         let denom = (rule.radius - rule.repel_radius).max(0.001);
                         let t = (dist - rule.repel_radius) / denom;
                         let bell = 1.0 - (2.0 * t - 1.0).abs();
-                        rule.attraction * bell
+                        if rule.attraction > 0.0 {
+                            let density_limit = 10.0;
+                            let density_factor =
+                                1.0 - ((local_density as f32 - density_limit).max(0.0)).min(1.005);
+                            rule.attraction * density_factor * bell
+                        } else {
+                            rule.attraction * bell
+                        }
                     };
 
                     let resonance = resonance_force(dist, angle, self.tick, rule);
