@@ -463,8 +463,8 @@ impl World {
             }
 
             let pulse = entropy_pulse(current.x, current.y, self.seed, self.tick, current.kind);
-            ax += pulse.0;
-            ay += pulse.1;
+            ax += pulse.0 * 0.0;
+            ay += pulse.1 * 0.0;
 
             let habitat = habitat_force(
                 current.x,
