@@ -416,7 +416,7 @@ impl World {
 
                     let base_force = if dist < rule.repel_radius {
                         let pressure = 1.0 - dist / rule.repel_radius;
-                        -3.20 * pressure
+                        -2.80 * pressure
                     } else {
                         let denom = (rule.radius - rule.repel_radius).max(0.001);
                         let t = (dist - rule.repel_radius) / denom;
