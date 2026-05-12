@@ -204,6 +204,22 @@ impl World {
             }
         }
 
+        // Balance active species chemistry so random seeds do not collapse into all-attraction blobs.
+        for &a in active_kinds.iter() {
+            let avg_attraction = active_kinds
+                .iter()
+                .map(|&b| rules[a][b].attraction)
+                .sum::<f32>()
+                / active_kinds.len() as f32;
+
+            for &b in active_kinds.iter() {
+                rules[a][b].attraction =
+                    (rules[a][b].attraction - avg_attraction * 0.70).clamp(-1.50, 1.50);
+            }
+
+            rules[a][a].attraction = rules[a][a].attraction.clamp(-0.65, 0.35);
+        }
+
         let mut world = Self {
             seed,
             tick: 0,
