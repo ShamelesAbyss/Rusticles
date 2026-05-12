@@ -114,7 +114,7 @@ impl Terminal {
                         };
 
                         let color = if active_kinds >= 3 {
-                            Color::Rgb(255, 255, 255)
+                            Color::Rgb(255, 210, 90)
                         } else if active_kinds == 2 {
                             Color::Rgb(180, 255, 255)
                         } else {
