@@ -192,7 +192,7 @@ impl World {
                 rules[a][b] = Rule {
                     attraction: rng.gen_range(-1.35..1.35) + self_bias,
                     radius: rng.gen_range(5.0..34.0),
-                    repel_radius: rng.gen_range(1.2..6.5),
+                    repel_radius: rng.gen_range(2.0..7.5),
                     orbit: rng.gen_range(-1.45..1.45),
                     density: rng.gen_range(-0.95..1.35),
                     drag: rng.gen_range(0.945..0.988),
