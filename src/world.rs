@@ -1,5 +1,5 @@
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{seq::SliceRandom, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -122,7 +122,13 @@ impl World {
         }
 
         let total = rng.gen_range(PARTICLE_COUNT_MIN..=PARTICLE_COUNT_MAX);
-        let weights: Vec<f32> = (0..PARTICLE_KINDS)
+        let active_count = rng.gen_range(4..=PARTICLE_KINDS);
+        let mut active_kinds: Vec<usize> = (0..PARTICLE_KINDS).collect();
+        active_kinds.shuffle(&mut rng);
+        active_kinds.truncate(active_count);
+
+        let weights: Vec<f32> = active_kinds
+            .iter()
             .map(|_| rng.gen_range(0.08..0.38))
             .collect();
         let weight_sum: f32 = weights.iter().sum();
@@ -134,7 +140,7 @@ impl World {
 
             for (idx, weight) in weights.iter().enumerate() {
                 if roll <= *weight {
-                    kind = idx;
+                    kind = active_kinds[idx];
                     break;
                 }
                 roll -= *weight;
