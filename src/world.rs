@@ -938,16 +938,20 @@ fn conway_escape_vector(
     if len > 0.001 {
         (ax / len, ay / len)
     } else {
-        let wiggle = rand_push(
-            x as f32,
-            y as f32,
-            0xC0A7_5EED,
-            (x as u64) ^ ((y as u64) << 16),
-        );
-        (wiggle, 0.0)
+        match (((x as u64).wrapping_mul(31) ^ ((y as u64).wrapping_mul(131)) ^ 0xA8A8_5151) % 8)
+            as usize
+        {
+            0 => (1.0, 0.0),
+            1 => (-1.0, 0.0),
+            2 => (0.0, 1.0),
+            3 => (0.0, -1.0),
+            4 => (0.707, 0.707),
+            5 => (-0.707, 0.707),
+            6 => (0.707, -0.707),
+            _ => (-0.707, -0.707),
+        }
     }
 }
-
 fn live_neighbors(cells: &[Cell], width: usize, height: usize, x: usize, y: usize) -> usize {
     let mut count = 0;
 
