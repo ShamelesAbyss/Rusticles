@@ -123,16 +123,25 @@ impl Terminal {
 
                         spans.push(Span::styled(glyph, Style::default().fg(color)));
                     } else {
-                        let ghost = match world.cell_at(x, y) {
-                            Cell::Alive if false => Some("."),
-                            Cell::Born if false => Some(","),
-                            _ => None,
-                        };
-
-                        if let Some(glyph) = ghost {
-                            spans.push(Span::styled(glyph, Style::default().fg(Color::DarkGray)));
-                        } else {
-                            spans.push(Span::raw(" "));
+                        match world.cell_at(x, y) {
+                            Cell::Born => spans.push(Span::styled(
+                                "o",
+                                Style::default().fg(Color::Rgb(80, 255, 255)),
+                            )),
+                            Cell::Alive => {
+                                let conway_phase = (world.tick / 8) % 3;
+                                let color = match conway_phase {
+                                    0 => Color::Rgb(40, 255, 150),
+                                    1 => Color::Rgb(80, 220, 255),
+                                    _ => Color::Rgb(180, 120, 255),
+                                };
+                                spans.push(Span::styled("O", Style::default().fg(color)));
+                            }
+                            Cell::Dying => spans.push(Span::styled(
+                                ".",
+                                Style::default().fg(Color::Rgb(100, 80, 140)),
+                            )),
+                            Cell::Dead => spans.push(Span::raw(" ")),
                         }
                     }
                 }
