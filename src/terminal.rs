@@ -157,6 +157,7 @@ impl Terminal {
             };
 
             let counts = world.kind_counts();
+            let active_species = counts.iter().filter(|count| **count > 0).count();
             let perf = world.perf();
 
             let hud_lines = vec![
@@ -171,6 +172,8 @@ impl Terminal {
                         world.particles.len().to_string(),
                         Style::default().fg(Color::Rgb(255, 220, 40)),
                     ),
+                    Span::raw(" | species "),
+                    Span::styled(active_species.to_string(), Style::default().fg(Color::Cyan)),
                     Span::raw(" | visible "),
                     Span::styled(
                         visible_cells.to_string(),
