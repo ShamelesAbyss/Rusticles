@@ -432,7 +432,7 @@ impl World {
                     };
 
                     let resonance = resonance_force(dist, angle, self.tick, rule);
-                    let radial_force = base_force + resonance;
+                    let radial_force = base_force + resonance * 0.0;
                     let density_shape = rule.density.clamp(-0.95, 0.35)
                         * (1.0 - dist / rule.radius).max(0.0)
                         * 0.000;
