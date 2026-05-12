@@ -94,6 +94,7 @@ impl Terminal {
 
             let mut lines = Vec::with_capacity(draw_h);
 
+            let conway_phase = (world.tick / 8) % 3;
             for y in 0..draw_h {
                 let mut spans = Vec::with_capacity(draw_w);
 
@@ -129,7 +130,6 @@ impl Terminal {
                                 Style::default().fg(Color::Rgb(80, 255, 255)),
                             )),
                             Cell::Alive => {
-                                let conway_phase = (world.tick / 8) % 3;
                                 let color = match conway_phase {
                                     0 => Color::Rgb(40, 255, 150),
                                     1 => Color::Rgb(80, 220, 255),

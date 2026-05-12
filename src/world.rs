@@ -276,7 +276,7 @@ impl World {
             self.perf.cell_ms = cell_start.elapsed().as_secs_f32() * 1000.0;
         }
 
-        if self.tick % 3 == 0 {
+        if self.tick % 5 == 0 {
             let seed_start = Instant::now();
             self.seed_cells_from_particles();
             self.perf.seed_ms = seed_start.elapsed().as_secs_f32() * 1000.0;
